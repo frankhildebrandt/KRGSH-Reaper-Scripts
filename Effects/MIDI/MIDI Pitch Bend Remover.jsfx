@@ -1,0 +1,14 @@
+version: 1.0.0
+desc: MIDI Pitch Bend Remover
+about:
+  Removes incoming MIDI Pitch Bend messages on every MIDI channel while passing other MIDI events through unchanged.
+
+in_pin:none
+out_pin:none
+
+@block
+while (midirecv(offset, msg1, msg23)) (
+  (msg1 & $xF0) != $xE0 ? (
+    midisend(offset, msg1, msg23);
+  );
+);
