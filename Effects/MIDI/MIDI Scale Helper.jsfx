@@ -1,0 +1,157 @@
+version: 1.0.0
+desc: MIDI Scale Helper
+about:
+  Maps incoming MIDI notes to a selected scale. White keys play the selected scale as if every key were C major. Black keys are quantized to the nearest scale tone.
+
+in_pin:none
+out_pin:none
+
+slider1:scale_enabled=1<0,1,1{Off,On}>Scale Helper
+slider2:root=0<0,11,1{C,C#,D,D#,E,F,F#,G,G#,A,A#,B}>Root
+slider3:scale_type=0<0,3,1{Major,Natural Minor,Harmonic Minor,Melodic Minor}>Scale
+
+@init
+NOTE_MAP_EMPTY = -1;
+
+note_map = 0;
+
+i = 0;
+loop(16 * 128,
+  note_map[i] = NOTE_MAP_EMPTY;
+  i += 1;
+);
+
+function scale_interval(scale, degree) local(interval) (
+  interval = 0;
+
+  scale == 0 ? (
+    degree == 0 ? interval = 0;
+    degree == 1 ? interval = 2;
+    degree == 2 ? interval = 4;
+    degree == 3 ? interval = 5;
+    degree == 4 ? interval = 7;
+    degree == 5 ? interval = 9;
+    degree == 6 ? interval = 11;
+  ) : scale == 1 ? (
+    degree == 0 ? interval = 0;
+    degree == 1 ? interval = 2;
+    degree == 2 ? interval = 3;
+    degree == 3 ? interval = 5;
+    degree == 4 ? interval = 7;
+    degree == 5 ? interval = 8;
+    degree == 6 ? interval = 10;
+  ) : scale == 2 ? (
+    degree == 0 ? interval = 0;
+    degree == 1 ? interval = 2;
+    degree == 2 ? interval = 3;
+    degree == 3 ? interval = 5;
+    degree == 4 ? interval = 7;
+    degree == 5 ? interval = 8;
+    degree == 6 ? interval = 11;
+  ) : (
+    degree == 0 ? interval = 0;
+    degree == 1 ? interval = 2;
+    degree == 2 ? interval = 3;
+    degree == 3 ? interval = 5;
+    degree == 4 ? interval = 7;
+    degree == 5 ? interval = 9;
+    degree == 6 ? interval = 11;
+  );
+
+  interval;
+);
+
+function clamp_midi_note(note) (
+  note < 0 ? note = 0;
+  note > 127 ? note = 127;
+  note;
+);
+
+function map_white_key(note, root_note, scale) local(pc, octave, degree, mapped) (
+  pc = note % 12;
+  octave = floor(note / 12);
+
+  degree = -1;
+  pc == 0 ? degree = 0;
+  pc == 2 ? degree = 1;
+  pc == 4 ? degree = 2;
+  pc == 5 ? degree = 3;
+  pc == 7 ? degree = 4;
+  pc == 9 ? degree = 5;
+  pc == 11 ? degree = 6;
+
+  mapped = octave * 12 + root_note + scale_interval(scale, degree);
+
+  clamp_midi_note(mapped);
+);
+
+function nearest_scale_note(note, root_note, scale) local(best_note, best_distance, candidate, degree, octave, distance) (
+  best_note = note;
+  best_distance = 128;
+  octave = floor((note - root_note) / 12) - 1;
+
+  loop(4,
+    degree = 0;
+    loop(7,
+      candidate = octave * 12 + root_note + scale_interval(scale, degree);
+      candidate >= 0 && candidate <= 127 ? (
+        distance = abs(candidate - note);
+        distance < best_distance || (distance == best_distance && candidate > best_note) ? (
+          best_distance = distance;
+          best_note = candidate;
+        );
+      );
+      degree += 1;
+    );
+    octave += 1;
+  );
+
+  clamp_midi_note(best_note);
+);
+
+function map_note_to_scale(note, root_note, scale) local(pc, mapped) (
+  pc = note % 12;
+
+  pc == 0 || pc == 2 || pc == 4 || pc == 5 || pc == 7 || pc == 9 || pc == 11 ? (
+    mapped = map_white_key(note, root_note, scale);
+  ) : (
+    mapped = nearest_scale_note(note, root_note, scale);
+  );
+
+  mapped;
+);
+
+@block
+while (midirecv(offset, msg1, msg23)) (
+  status = msg1 & $xF0;
+  channel = msg1 & $x0F;
+
+  status == $x80 || status == $x90 ? (
+    note = msg23 & $x7F;
+    velocity = (msg23 >> 8) & $x7F;
+    map_idx = channel * 128 + note;
+
+    (status == $x90 && velocity > 0 && scale_enabled) ? (
+      mapped_note = map_note_to_scale(note, root, scale_type);
+      note_map[map_idx] = mapped_note;
+      msg23 = (msg23 & $xFF00) | mapped_note;
+      midisend(offset, msg1, msg23);
+    ) : (status == $x90 && velocity > 0) ? (
+      midisend(offset, msg1, msg23);
+    ) : (
+      mapped_note = note_map[map_idx];
+      mapped_note == NOTE_MAP_EMPTY ? (
+        scale_enabled ? (
+          mapped_note = map_note_to_scale(note, root, scale_type);
+        ) : (
+          mapped_note = note;
+        );
+      );
+      note_map[map_idx] = NOTE_MAP_EMPTY;
+      msg23 = (msg23 & $xFF00) | mapped_note;
+      midisend(offset, msg1, msg23);
+    );
+  ) : (
+    midisend(offset, msg1, msg23);
+  );
+);

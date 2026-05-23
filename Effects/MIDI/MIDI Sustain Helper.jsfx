@@ -1,0 +1,280 @@
+version: 1.0.0
+desc: MIDI Sustain Helper
+about:
+  Adds automatic CC64 sustain-pedal support for piano playing. Incoming physical sustain-pedal messages still update the helper state.
+
+in_pin:none
+out_pin:none
+
+slider1:sustain_helper=1<0,3,1{Off,Chord Change,Algo,Natural}>Sustain Helper
+
+@init
+SUSTAIN_CC = 64;
+SUSTAIN_UP = 0;
+SUSTAIN_DOWN = 127;
+SUSTAIN_DELAY_SAMPLES = 12;
+
+MODE_OFF = 0;
+MODE_CHORD_CHANGE = 1;
+MODE_ALGO = 2;
+MODE_NATURAL = 3;
+
+held_notes = 0;
+pitch_classes = held_notes + 16 * 128;
+active_note_count = pitch_classes + 16 * 12;
+last_harmony_mask = active_note_count + 16;
+pedal_is_down = last_harmony_mask + 16;
+pedal_repress_offset = pedal_is_down + 16;
+pedal_repress_pending = pedal_repress_offset + 16;
+generated_pedal_down = pedal_repress_pending + 16;
+previous_sustain_helper = MODE_OFF;
+
+i = 0;
+loop(16 * 128,
+  held_notes[i] = 0;
+  i += 1;
+);
+
+i = 0;
+loop(16 * 12,
+  pitch_classes[i] = 0;
+  i += 1;
+);
+
+i = 0;
+loop(16,
+  active_note_count[i] = 0;
+  last_harmony_mask[i] = 0;
+  pedal_is_down[i] = 0;
+  pedal_repress_offset[i] = 0;
+  pedal_repress_pending[i] = 0;
+  generated_pedal_down[i] = 0;
+  i += 1;
+);
+
+function cc_msg23(cc, value) (
+  cc | (value << 8);
+);
+
+function send_sustain(offset, channel, value) (
+  midisend(offset, $xB0 | channel, cc_msg23(SUSTAIN_CC, value));
+  pedal_is_down[channel] = value >= 64;
+  generated_pedal_down[channel] = value >= 64;
+);
+
+function send_sustain_up(offset, channel) (
+  generated_pedal_down[channel] ? (
+    send_sustain(offset, channel, SUSTAIN_UP);
+  );
+);
+
+function send_sustain_down(offset, channel) (
+  pedal_is_down[channel] == 0 ? (
+    send_sustain(offset, channel, SUSTAIN_DOWN);
+  );
+);
+
+function channel_mask(channel) local(mask, pc) (
+  mask = 0;
+  pc = 0;
+  loop(12,
+    pitch_classes[channel * 12 + pc] > 0 ? (
+      mask = mask | (1 << pc);
+    );
+    pc += 1;
+  );
+  mask;
+);
+
+function pitch_class_count(mask) local(count, pc) (
+  count = 0;
+  pc = 0;
+  loop(12,
+    mask & (1 << pc) ? count += 1;
+    pc += 1;
+  );
+  count;
+);
+
+function is_subset(mask, old_mask) (
+  (mask & old_mask) == mask;
+);
+
+function has_dissonant_addition(new_mask, old_mask) local(added, pc, dissonant) (
+  added = new_mask & (4095 - old_mask);
+  dissonant = 0;
+  pc = 0;
+  loop(12,
+    added & (1 << pc) ? (
+      old_mask & (1 << ((pc + 1) % 12)) ? dissonant = 1;
+      old_mask & (1 << ((pc + 11) % 12)) ? dissonant = 1;
+      old_mask & (1 << ((pc + 6) % 12)) ? dissonant = 1;
+    );
+    pc += 1;
+  );
+  dissonant;
+);
+
+function should_reset_sustain(mode, channel, new_mask) local(old_mask, old_count, new_count, reset) (
+  old_mask = last_harmony_mask[channel];
+  old_count = pitch_class_count(old_mask);
+  new_count = pitch_class_count(new_mask);
+  reset = 0;
+
+  old_mask && new_mask != old_mask ? (
+    mode == MODE_CHORD_CHANGE ? (
+      old_count >= 3 && is_subset(new_mask, old_mask) == 0 ? reset = 1;
+    ) : (
+      old_count >= 3 && is_subset(new_mask, old_mask) == 0 && active_note_count[channel] > 1 ? reset = 1;
+      new_count >= 3 && old_count >= 3 && has_dissonant_addition(new_mask, old_mask) ? reset = 1;
+    );
+  );
+
+  reset;
+);
+
+function schedule_natural_repress(offset, channel) local(delay) (
+  delay = SUSTAIN_DELAY_SAMPLES;
+  offset + delay < samplesblock ? (
+    pedal_repress_offset[channel] = offset + delay;
+  ) : (
+    pedal_repress_offset[channel] = samplesblock - 1;
+  );
+  pedal_repress_pending[channel] = 1;
+);
+
+function send_due_repress(offset_limit) local(ch) (
+  ch = 0;
+  loop(16,
+    pedal_repress_pending[ch] && pedal_repress_offset[ch] <= offset_limit ? (
+      send_sustain_down(pedal_repress_offset[ch], ch);
+      pedal_repress_pending[ch] = 0;
+    );
+    ch += 1;
+  );
+);
+
+function track_note_on(channel, note) local(idx, pc) (
+  idx = channel * 128 + note;
+  held_notes[idx] += 1;
+  held_notes[idx] == 1 ? (
+    active_note_count[channel] += 1;
+    pc = note % 12;
+    pitch_classes[channel * 12 + pc] += 1;
+  );
+);
+
+function track_note_off(channel, note) local(idx, pc) (
+  idx = channel * 128 + note;
+  held_notes[idx] > 0 ? (
+    held_notes[idx] -= 1;
+    held_notes[idx] == 0 ? (
+      active_note_count[channel] -= 1;
+      pc = note % 12;
+      pitch_classes[channel * 12 + pc] -= 1;
+    );
+  );
+);
+
+function clear_channel_notes(channel) local(note, pc) (
+  note = 0;
+  loop(128,
+    held_notes[channel * 128 + note] = 0;
+    note += 1;
+  );
+
+  pc = 0;
+  loop(12,
+    pitch_classes[channel * 12 + pc] = 0;
+    pc += 1;
+  );
+
+  active_note_count[channel] = 0;
+  last_harmony_mask[channel] = 0;
+  pedal_repress_pending[channel] = 0;
+);
+
+function disable_sustain_helper() local(ch) (
+  ch = 0;
+  loop(16,
+    pedal_repress_pending[ch] = 0;
+    send_sustain_up(0, ch);
+    ch += 1;
+  );
+);
+
+@block
+sustain_helper == MODE_OFF ? (
+  previous_sustain_helper != MODE_OFF ? (
+    disable_sustain_helper();
+  );
+) : (
+  send_due_repress(0);
+);
+
+previous_sustain_helper = sustain_helper;
+
+while (midirecv(offset, msg1, msg23)) (
+  sustain_helper != MODE_OFF ? (
+    send_due_repress(offset);
+  );
+
+  status = msg1 & $xF0;
+  channel = msg1 & $x0F;
+
+  status == $x80 || status == $x90 ? (
+    note = msg23 & $x7F;
+    velocity = (msg23 >> 8) & $x7F;
+
+    status == $x90 && velocity > 0 ? (
+      sustain_helper != MODE_OFF ? (
+        track_note_on(channel, note);
+        new_harmony_mask = channel_mask(channel);
+        should_reset_sustain(sustain_helper, channel, new_harmony_mask) ? (
+          send_sustain_up(offset, channel);
+          sustain_helper == MODE_NATURAL ? (
+            schedule_natural_repress(offset, channel);
+          );
+        ) : (
+          send_sustain_down(offset, channel);
+        );
+        last_harmony_mask[channel] = new_harmony_mask;
+      );
+      midisend(offset, msg1, msg23);
+      sustain_helper != MODE_OFF && sustain_helper != MODE_NATURAL ? (
+        send_sustain_down(offset, channel);
+      );
+    ) : (
+      sustain_helper != MODE_OFF ? (
+        track_note_off(channel, note);
+        active_note_count[channel] == 0 && sustain_helper >= MODE_ALGO ? (
+          send_sustain_up(offset, channel);
+          last_harmony_mask[channel] = 0;
+        );
+      );
+      midisend(offset, msg1, msg23);
+    );
+  ) : status == $xB0 ? (
+    cc = msg23 & $x7F;
+    cc_value = (msg23 >> 8) & $x7F;
+    cc == SUSTAIN_CC ? (
+      pedal_is_down[channel] = cc_value >= 64;
+      generated_pedal_down[channel] = 0;
+      pedal_repress_pending[channel] = 0;
+      midisend(offset, msg1, msg23);
+    ) : (
+      cc == 120 || cc == 123 ? (
+        clear_channel_notes(channel);
+        pedal_is_down[channel] = 0;
+        generated_pedal_down[channel] = 0;
+      );
+      midisend(offset, msg1, msg23);
+    );
+  ) : (
+    midisend(offset, msg1, msg23);
+  );
+);
+
+sustain_helper != MODE_OFF ? (
+  send_due_repress(samplesblock - 1);
+);
