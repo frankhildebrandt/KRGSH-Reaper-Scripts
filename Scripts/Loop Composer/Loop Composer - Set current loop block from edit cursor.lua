@@ -1,5 +1,5 @@
 -- @description Loop Composer - Set current loop block from edit cursor
--- @version 1.4.9
+-- @version 1.4.10
 -- @author KRGSH
 -- @noindex
 -- @provides
