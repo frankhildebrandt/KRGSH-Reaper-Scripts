@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="90" height="30" viewBox="0 0 90 30">
+  <rect width="90" height="30" rx="4" fill="#2c2430"/>
+  <path d="M15 10h14l-3-3m3 3-3 3M29 20H15l3 3m-3-3 3-3" fill="none" stroke="#d6bcfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="45" cy="15" r="5.5" fill="#fc8181"/>
+  <text x="69" y="19" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700" fill="#f7fafc">RETRY</text>
+</svg>

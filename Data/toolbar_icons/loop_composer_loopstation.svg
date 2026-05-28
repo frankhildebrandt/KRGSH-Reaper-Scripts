@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="90" height="30" viewBox="0 0 90 30">
+  <rect width="90" height="30" rx="4" fill="#1f2a30"/>
+  <path d="M19 8a8 8 0 1 1-7 12" fill="none" stroke="#63b3ed" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M11 20h7v-7" fill="none" stroke="#63b3ed" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M40 21V9l12 6z" fill="#90cdf4"/>
+  <text x="70" y="19" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700" fill="#f7fafc">LOOP</text>
+</svg>

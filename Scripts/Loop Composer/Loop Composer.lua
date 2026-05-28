@@ -1,0 +1,24 @@
+-- @description Loop Composer
+-- @version 1.0.0
+-- @author KRGSH
+-- @metapackage
+-- @provides
+--   [nomain] Loop Composer Core.lua
+--   [main] Loop Composer - Set length to 4 bars.lua
+--   [main] Loop Composer - Set length to 8 bars.lua
+--   [main] Loop Composer - Set length to 16 bars.lua
+--   [main] Loop Composer - Set length to 32 bars.lua
+--   [main] Loop Composer - Set length to 64 bars.lua
+--   [main] Loop Composer - Start loop recording.lua
+--   [main] Loop Composer - Start loopstation mode.lua
+--   [main] Loop Composer - Queue loopstation recording.lua
+--   [main] Loop Composer - Stop loopstation recording.lua
+--   [main] Loop Composer - Replace and queue loopstation recording.lua
+--   [main] Loop Composer - Set current loop block from edit cursor.lua
+--   [main] Loop Composer - Go to previous loop block.lua
+--   [main] Loop Composer - Go to next loop block.lua
+--   [main] Loop Composer - Create next loop block from current.lua
+--   [main] Loop Composer - Install standard toolbar.lua
+-- @about
+--   ReaScript action set for fixed-length loop-block recording, overdubbing,
+--   progression, and navigation.

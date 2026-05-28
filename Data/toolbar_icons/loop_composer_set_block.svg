@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="90" height="30" viewBox="0 0 90 30">
+  <rect width="90" height="30" rx="4" fill="#292826"/>
+  <path d="M18 6v18M32 6v18" stroke="#fbd38d" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M14 10h22M14 20h22" stroke="#fbd38d" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M51 8v14" stroke="#f6ad55" stroke-width="2.6" stroke-linecap="round"/>
+  <text x="70" y="19" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700" fill="#f7fafc">SET</text>
+</svg>

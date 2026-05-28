@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="90" height="30" viewBox="0 0 90 30">
+  <rect width="90" height="30" rx="4" fill="#242832"/>
+  <path d="M18 8a8 8 0 1 1-6.9 12" fill="none" stroke="#68d391" stroke-width="2.3" stroke-linecap="round"/>
+  <path d="M10 20h7v-7" fill="none" stroke="#68d391" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="45" y="20" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#f7fafc">16</text>
+  <text x="68" y="20" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8" font-weight="700" fill="#a0aec0">BAR</text>
+</svg>

@@ -1,0 +1,65 @@
+name: ReaPack index
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    name: Check packages
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Install ReaPack indexer
+        run: gem install reapack-index
+
+      - name: Validate ReaPack metadata
+        run: reapack-index --check
+
+  update:
+    name: Update index
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: Install ReaPack indexer
+        run: gem install reapack-index
+
+      - name: Configure Git author
+        run: |
+          git config user.name "KRGSH ReaPack Bot"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Update ReaPack index
+        run: >-
+          reapack-index --scan --amend --commit -m 'Update ReaPack index: $changelog'
+
+      - name: Push index update
+        run: git push

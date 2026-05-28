@@ -1,4 +1,6 @@
 version: 1.0.0
+author: KRGSH
+vendor: KRGSH
 desc: MIDI Pitch Bend Remover
 about:
   Removes incoming MIDI Pitch Bend messages and passes all other MIDI through unchanged.

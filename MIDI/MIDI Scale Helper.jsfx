@@ -1,4 +1,6 @@
 version: 1.0.0
+author: KRGSH
+vendor: KRGSH
 desc: MIDI Scale Helper
 about:
   Maps incoming MIDI notes to a selected scale. White keys play the selected scale as if every key were C major. Black keys are quantized to the nearest scale tone.

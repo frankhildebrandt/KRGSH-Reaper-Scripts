@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="90" height="30" viewBox="0 0 90 30">
+  <rect width="90" height="30" rx="4" fill="#222a2b"/>
+  <path d="m17 8 12 7-12 7V8zM34 8l12 7-12 7V8z" fill="#81e6d9"/>
+  <text x="68" y="19" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700" fill="#f7fafc">NEXT</text>
+</svg>

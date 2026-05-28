@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="90" height="30" viewBox="0 0 90 30">
+  <rect width="90" height="30" rx="4" fill="#20272d"/>
+  <rect x="12" y="8" width="16" height="14" rx="2" fill="none" stroke="#90cdf4" stroke-width="2"/>
+  <rect x="32" y="8" width="16" height="14" rx="2" fill="none" stroke="#90cdf4" stroke-width="2"/>
+  <path d="M52 15h11m-5.5-5.5v11" stroke="#68d391" stroke-width="2.3" stroke-linecap="round"/>
+  <text x="76" y="19" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700" fill="#f7fafc">ADD</text>
+</svg>

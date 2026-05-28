@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="90" height="30" viewBox="0 0 90 30">
+  <rect width="90" height="30" rx="4" fill="#222a2b"/>
+  <path d="M28 8 16 15l12 7V8zM45 8 33 15l12 7V8z" fill="#81e6d9"/>
+  <text x="67" y="19" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" font-weight="700" fill="#f7fafc">PREV</text>
+</svg>

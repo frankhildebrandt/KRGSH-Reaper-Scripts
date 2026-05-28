@@ -1,4 +1,6 @@
 version: 2.0.1
+author: KRGSH
+vendor: KRGSH
 desc: MIDI Sustain Helper - Sustain Harmony Reset
 about:
   Tracks all pitch classes played while sustain is active.
