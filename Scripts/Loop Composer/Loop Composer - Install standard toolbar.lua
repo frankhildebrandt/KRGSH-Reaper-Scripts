@@ -1,5 +1,5 @@
 -- @description Loop Composer - Install standard toolbar
--- @version 1.4.14
+-- @version 1.4.15
 -- @author KRGSH
 -- @noindex
 -- @provides

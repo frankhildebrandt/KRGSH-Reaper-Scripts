@@ -312,13 +312,14 @@ local function midi_take_for_item(item)
   return nil
 end
 
-local function earliest_midi_ppq(take)
+local function leading_silence_ppq(take, start_time)
   if not take or not reaper.TakeIsMIDI(take) then
-    return nil
+    return 0
   end
 
+  local block_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, start_time)
   local earliest = math.huge
-  local _, note_count, cc_count, text_count = reaper.MIDI_CountEvts(take)
+  local _, note_count = reaper.MIDI_CountEvts(take)
 
   for i = 0, note_count - 1 do
     local retval, _, _, start_ppq = reaper.MIDI_GetNote(take, i)
@@ -327,17 +328,15 @@ local function earliest_midi_ppq(take)
     end
   end
 
-  for i = 0, cc_count + text_count - 1 do
-    local retval, _, _, ppqpos = reaper.MIDI_GetEvt(take, i)
-    if retval and ppqpos < earliest then
-      earliest = ppqpos
-    end
+  if earliest == math.huge then
+    return 0
   end
 
-  if earliest == math.huge then
-    return nil
+  local lead = earliest - block_ppq
+  if lead < 0 then
+    return 0
   end
-  return earliest
+  return lead
 end
 
 local function shift_midi_take_events(take, delta_ppq)
@@ -373,23 +372,6 @@ local function shift_midi_take_events(take, delta_ppq)
   end
 
   reaper.MIDI_Sort(take)
-end
-
-local function align_midi_take_to_ppq_zero(take)
-  local earliest = earliest_midi_ppq(take)
-  if earliest and earliest > 0 then
-    shift_midi_take_events(take, -earliest)
-  end
-end
-
-local function set_midi_item_extents(item, start_time, end_time)
-  if not item or not reaper.MIDI_SetItemExtents then
-    return
-  end
-
-  local start_qn = reaper.TimeMap2_timeToQN(project(), start_time)
-  local end_qn = reaper.TimeMap2_timeToQN(project(), end_time)
-  reaper.MIDI_SetItemExtents(item, start_qn, end_qn)
 end
 
 local function midi_items_at_time(track, start_time)
@@ -638,20 +620,31 @@ local function normalize_new_items(initial_guids, start_time, end_time, stopped_
     return {}
   end
 
+  local max_bars = current_bars()
+  local source_end = source_end_for_duration(start_time, recorded_end, max_bars)
+
   local normalized_items = {}
   reaper.PreventUIRefresh(1)
   for _, item in ipairs(trim_candidates) do
     if reaper.ValidatePtr2(project(), item, "MediaItem*") then
       local trimmed = trim_item_to_start(item, start_time)
+      local lead_before = 0
+      if trimmed and reaper.ValidatePtr2(project(), trimmed, "MediaItem*") then
+        local trimmed_take = midi_take_for_item(trimmed)
+        lead_before = (trimmed_take and leading_silence_ppq(trimmed_take, start_time)) or 0
+      end
       local glued = nil
       if trimmed and reaper.ValidatePtr2(project(), trimmed, "MediaItem*") then
-        glued = glue_item_to_exact_length(trimmed, start_time, end_time)
+        glued = glue_item_to_exact_length(trimmed, start_time, source_end)
       end
       if glued and reaper.ValidatePtr2(project(), glued, "MediaItem*") then
         local glued_take = midi_take_for_item(glued)
         if glued_take then
-          align_midi_take_to_ppq_zero(glued_take)
-          set_midi_item_extents(glued, start_time, end_time)
+          local lead_after = leading_silence_ppq(glued_take, start_time)
+          local shift_ppq = lead_before - lead_after
+          if shift_ppq > 0 then
+            shift_midi_take_events(glued_take, shift_ppq)
+          end
         end
         local item_start = reaper.GetMediaItemInfo_Value(glued, "D_POSITION")
         local full_len = math.max(0.001, end_time - item_start)
