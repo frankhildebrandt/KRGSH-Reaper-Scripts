@@ -109,7 +109,8 @@ SWS zoom. Playback and recording states are animated in the view.
 Right-clicking a map-ready control opens a context menu with `MIDI learn` and
 `Reset MIDI mapping`. Learned MIDI CC or note mappings are stored per project
 and trigger the same action as clicking the control. The context menu is also
-used for track slots, so individual target tracks can be selected from MIDI.
+used for track slots, so individual target track loopstation buttons can be
+triggered from MIDI.
 
 The view can store target tracks from the current REAPER track selection. When
 target tracks are configured, Loop Composer arms and selects those tracks for
@@ -117,6 +118,12 @@ recording, then restores the previous track selection and arm states after the
 pass. `Dub` enables MIDI record-dub mode for those target tracks by setting
 their REAPER record mode to `Record: MIDI overdub`; audio recording remains in
 normal item recording and is not moved into takes or fixed lanes.
+
+Target tracks are shown as two-column loopstation buttons. Clicking or
+MIDI-triggering a target track selects and arms only that track, then queues a
+loopstation recording pass for it. Triggering a target button again while a pass
+is queued or recording requests the recording stop and leaves loopstation
+playback running.
 
 `Install standard toolbar` creates `Loop Composer Toolbar.ReaperMenu` in the
 REAPER resource path, installs the included toolbar icons, and tells you where

@@ -1,5 +1,5 @@
 -- @description Loop Composer - Open view
--- @version 1.3.3
+-- @version 1.4.0
 -- @author KRGSH
 -- @noindex
 -- @provides
@@ -10,7 +10,8 @@ local core = dofile(script_path .. "Loop Composer Core.lua")
 
 local WINDOW_TITLE = "Loop Composer"
 local WIDTH = 560
-local HEIGHT = 740
+local BASE_HEIGHT = 740
+local HEIGHT = BASE_HEIGHT
 local PADDING = 14
 local GAP = 8
 local BUTTON_H = 34
@@ -66,6 +67,24 @@ end
 
 local function text_width(value)
   return gfx.measurestr(tostring(value or ""))
+end
+
+local function fit_label(value, max_width)
+  local label = tostring(value or "")
+  if text_width(label) <= max_width then
+    return label
+  end
+
+  local suffix = "..."
+  local limit = math.max(1, #label)
+  while limit > 1 do
+    local candidate = label:sub(1, limit) .. suffix
+    if text_width(candidate) <= max_width then
+      return candidate
+    end
+    limit = limit - 1
+  end
+  return suffix
 end
 
 local function inside(mx, my, x, y, w, h)
@@ -148,6 +167,12 @@ local function mapping_suffix(control_id)
   return ""
 end
 
+local function desired_height_for_tracks(track_count)
+  local rows = math.max(1, math.ceil((track_count or 0) / 2))
+  local tracks_bottom = 508 + 28 + 44 + (rows * (BUTTON_H + GAP))
+  return math.max(BASE_HEIGHT, tracks_bottom + 42)
+end
+
 local function open_context_menu(control)
   gfx.x = gfx.mouse_x
   gfx.y = gfx.mouse_y
@@ -212,10 +237,11 @@ local function button(id, label, icon, x, y, w, h, action, options)
   if icon then
     draw_icon(icon, x + 1, y, options.icon_color or colors.text)
     if label and label ~= "" and w > ICON_BUTTON + 22 then
-      text(x + ICON_BUTTON + 3, y + 10, label, colors.text)
+      text(x + ICON_BUTTON + 3, y + 10, fit_label(label, w - ICON_BUTTON - 14), colors.text)
     end
   else
-    text(x + math.max(8, (w - text_width(label)) / 2), y + 10, label, colors.text)
+    local fitted = fit_label(label, w - 16)
+    text(x + math.max(8, (w - text_width(fitted)) / 2), y + 10, fitted, colors.text)
   end
 
   local mapped = core.midi_mapping_label(id)
@@ -432,7 +458,7 @@ local function draw_block_tools(status, y)
   end, { active = status.recorddub_enabled, active_color = colors.accent_dark })
 end
 
-local function draw_tracks(status, y)
+local function draw_tracks(status, y, tracks)
   section_title("Target tracks", PADDING, y, WIDTH - PADDING * 2)
   local by = y + 28
 
@@ -449,7 +475,6 @@ local function draw_tracks(status, y)
   local mode_color = status.recorddub_enabled and colors.ok or colors.muted
   text(PADDING + 210, by + 10, mode, mode_color)
 
-  local tracks = core.target_tracks()
   local row_y = by + 44
   if #tracks == 0 then
     text(PADDING, row_y + 8, "No target tracks. Select tracks in REAPER, then use selected.", colors.muted)
@@ -457,29 +482,22 @@ local function draw_tracks(status, y)
   end
 
   for i, track in ipairs(tracks) do
-    if i > 4 then
-      text(PADDING, row_y, "+" .. tostring(#tracks - 4) .. " more tracks", colors.muted)
-      break
-    end
-
-    local x = PADDING
-    local w = WIDTH - PADDING * 2
+    local column = (i - 1) % 2
+    local row = math.floor((i - 1) / 2)
+    local w = (WIDTH - (PADDING * 2) - GAP) / 2
+    local x = PADDING + (column * (w + GAP))
+    local y_pos = row_y + (row * (BUTTON_H + GAP))
     local id = "track_slot_" .. tostring(i)
-    local label = (track.enabled and "On  " or "Off ") .. tostring(track.track_number) .. "  " .. track.name
-    button(id, label, nil, x, row_y, w, 26, function()
-      core.select_target_track(i)
-      return "Selected " .. track.name
+    local label = tostring(track.track_number) .. "  " .. track.name
+    button(id, label, "queue", x, y_pos, w, BUTTON_H, function()
+      local ok, message = core.toggle_target_loopstation_recording(i)
+      return message or (ok and "Recording queued" or "Target track unavailable")
     end, {
-      active = track.enabled,
-      active_color = track.exists and colors.accent_dark or colors.warning,
+      active = track.loopstation_active,
+      active_color = track.exists and colors.record or colors.warning,
+      style = track.enabled and colors.panel_alt or colors.panel,
+      pulse = track.loopstation_active,
     })
-
-    local mx, my = gfx.mouse_x, gfx.mouse_y
-    local left_down = (gfx.mouse_cap & 1) == 1
-    if inside(mx, my, x, row_y, 48, 26) and left_down and not mouse_left_was_down then
-      core.toggle_target_track(i)
-    end
-    row_y = row_y + 30
   end
 end
 
@@ -521,6 +539,16 @@ local function draw()
   actions = {}
 
   local status = core.status()
+  local tracks = core.target_tracks()
+  local desired_height = desired_height_for_tracks(#tracks)
+  if desired_height ~= HEIGHT and gfx.dock(-1) == 0 then
+    HEIGHT = desired_height
+    gfx.init(WINDOW_TITLE, WIDTH, HEIGHT, core.dock_state())
+    gfx.setfont(1, "Arial", 13)
+  else
+    HEIGHT = math.max(desired_height, gfx.h)
+  end
+
   rect(0, 0, WIDTH, HEIGHT, colors.bg, true)
 
   gfx.setfont(1, "Arial", 18)
@@ -537,7 +565,7 @@ local function draw()
   draw_length_buttons(304)
   draw_loopstation(status, 372)
   draw_block_tools(status, 440)
-  draw_tracks(status, 508)
+  draw_tracks(status, 508, tracks)
 
   if learning_control then
     text(PADDING, HEIGHT - 20, "MIDI learn: " .. learning_control.label .. mapping_suffix(learning_control.id), colors.warning)

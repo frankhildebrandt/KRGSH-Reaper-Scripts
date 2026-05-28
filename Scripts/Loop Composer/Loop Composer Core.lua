@@ -11,6 +11,7 @@ local LOOPSTATION_STOP_KEY = "loopstation_stop_requested"
 local LOOPSTATION_QUEUE_KEY = "loopstation_queue_state"
 local LAST_TAKE_GUIDS_KEY = "last_loopstation_take_guids"
 local REPLACE_AND_QUEUE_KEY = "replace_and_queue_requested"
+local LOOPSTATION_TARGET_KEY = "loopstation_target_guid"
 local DOCK_STATE_KEY = "view_dock_state"
 local RECORD_DUB_KEY = "recorddub_enabled"
 local TARGET_TRACKS_KEY = "target_tracks"
@@ -124,6 +125,10 @@ end
 
 local function loopstation_queue_state()
   return get_ext(LOOPSTATION_QUEUE_KEY, "")
+end
+
+local function loopstation_target_guid()
+  return get_ext(LOOPSTATION_TARGET_KEY, "")
 end
 
 local function replace_and_queue_requested()
@@ -519,8 +524,8 @@ local function apply_recorddub_to_tracks()
   end
 end
 
-local function begin_target_recording_context()
-  local targets = active_target_tracks()
+local function begin_target_recording_context(targets)
+  targets = targets or active_target_tracks()
   if #targets == 0 then
     apply_recorddub_to_tracks()
     return { restore = function() end }
@@ -678,6 +683,7 @@ local function loop_status()
     recorddub_enabled = recorddub_enabled(),
     loopstation_queue_state = loopstation_queue_state(),
     loopstation_queued = loopstation_queue_state() ~= "",
+    loopstation_target_guid = loopstation_target_guid(),
   }
 end
 
@@ -796,7 +802,7 @@ function M.start_loopstation_mode()
   reaper.Undo_EndBlock2(project(), "Loop Composer: start loopstation mode", -1)
 end
 
-function M.queue_loopstation_recording()
+function M.queue_loopstation_recording(target_track)
   local bars = current_bars()
   local start_time = current_start()
   local prerecord_time = time_one_beat_before(start_time)
@@ -809,9 +815,21 @@ function M.queue_loopstation_recording()
   local recording_reached_block_start = false
   local finalized = false
   local last_pos = reaper.GetPlayPositionEx(project())
+  local target_tracks = nil
+  local target_guid = ""
+
+  if target_track and reaper.ValidatePtr2(project(), target_track, "MediaTrack*") then
+    target_tracks = { target_track }
+    target_guid = track_guid(target_track)
+  end
 
   clear_ext(LOOPSTATION_STOP_KEY)
   clear_ext(REPLACE_AND_QUEUE_KEY)
+  if target_guid ~= "" then
+    set_ext(LOOPSTATION_TARGET_KEY, target_guid)
+  else
+    clear_ext(LOOPSTATION_TARGET_KEY)
+  end
   set_ext(LOOPSTATION_QUEUE_KEY, "queued")
   set_loop_range(start_time, end_time, false)
   reaper.GetSetRepeat(1)
@@ -819,7 +837,7 @@ function M.queue_loopstation_recording()
   local state = reaper.GetPlayStateEx(project())
   if (state & 1) ~= 1 then
     reaper.SetEditCurPos2(project(), prerecord_time, true, false)
-    record_context = begin_target_recording_context()
+    record_context = begin_target_recording_context(target_tracks)
     initial_guids = snapshot_item_guids()
     set_ext(LOOPSTATION_QUEUE_KEY, "recording")
     recording_started = true
@@ -838,6 +856,7 @@ function M.queue_loopstation_recording()
     finalized = true
     clear_ext(LOOPSTATION_STOP_KEY)
     clear_ext(LOOPSTATION_QUEUE_KEY)
+    clear_ext(LOOPSTATION_TARGET_KEY)
 
     if initial_guids then
       reaper.Undo_BeginBlock2(project())
@@ -893,7 +912,7 @@ function M.queue_loopstation_recording()
     end
 
     if not recording_started and at_loop_prerecord_start(play_pos) then
-      record_context = begin_target_recording_context()
+      record_context = begin_target_recording_context(target_tracks)
       initial_guids = snapshot_item_guids()
       set_ext(LOOPSTATION_QUEUE_KEY, "recording")
       recording_started = true
@@ -929,6 +948,7 @@ end
 function M.stop_loopstation_recording()
   set_ext(LOOPSTATION_STOP_KEY, "1")
   clear_ext(LOOPSTATION_QUEUE_KEY)
+  clear_ext(LOOPSTATION_TARGET_KEY)
 
   local state = reaper.GetPlayStateEx(project())
   local is_recording = (state & 4) == 4
@@ -1018,6 +1038,7 @@ end
 
 function M.target_tracks()
   local tracks = {}
+  local active_loopstation_target = loopstation_target_guid()
   for index, slot in ipairs(decode_target_tracks()) do
     local track = track_by_guid(slot.guid)
     tracks[#tracks + 1] = {
@@ -1027,6 +1048,7 @@ function M.target_tracks()
       enabled = slot.enabled,
       name = track_name(track),
       track_number = track and math.floor(reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") or 0) or 0,
+      loopstation_active = active_loopstation_target ~= "" and active_loopstation_target == slot.guid,
     }
   end
   return tracks
@@ -1083,6 +1105,28 @@ function M.select_target_track(index)
   arm_tracks_exclusive({ track })
   reaper.UpdateArrange()
   return true
+end
+
+function M.toggle_target_loopstation_recording(index)
+  local slots = decode_target_tracks()
+  local slot = slots[index]
+  if not slot then
+    return false, "Target track missing"
+  end
+
+  local track = track_by_guid(slot.guid)
+  if not track then
+    return false, "Target track not found"
+  end
+
+  if loopstation_queue_state() ~= "" then
+    M.stop_loopstation_recording()
+    return true, "Recording stop requested"
+  end
+
+  M.select_target_track(index)
+  M.queue_loopstation_recording(track)
+  return true, "Recording queued for " .. track_name(track)
 end
 
 function M.recent_midi_event()
