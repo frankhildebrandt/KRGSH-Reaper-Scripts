@@ -312,6 +312,75 @@ local function midi_take_for_item(item)
   return nil
 end
 
+local function leading_silence_ppq(take, start_time)
+  if not take or not reaper.TakeIsMIDI(take) then
+    return 0
+  end
+
+  local block_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, start_time)
+  local earliest = math.huge
+  local _, note_count, cc_count, text_count = reaper.MIDI_CountEvts(take)
+
+  for i = 0, note_count - 1 do
+    local retval, _, _, start_ppq = reaper.MIDI_GetNote(take, i)
+    if retval and start_ppq < earliest then
+      earliest = start_ppq
+    end
+  end
+
+  for i = 0, cc_count + text_count - 1 do
+    local retval, _, _, ppqpos = reaper.MIDI_GetEvt(take, i)
+    if retval and ppqpos < earliest then
+      earliest = ppqpos
+    end
+  end
+
+  if earliest == math.huge then
+    return 0
+  end
+
+  local lead = earliest - block_ppq
+  if lead < 0 then
+    return 0
+  end
+  return lead
+end
+
+local function shift_midi_take_events(take, delta_ppq)
+  if not take or not reaper.TakeIsMIDI(take) or delta_ppq == 0 then
+    return
+  end
+
+  local _, note_count, cc_count, text_count = reaper.MIDI_CountEvts(take)
+
+  for i = 0, note_count - 1 do
+    local retval, selected, muted, start_ppq, end_ppq, chan, pitch, vel = reaper.MIDI_GetNote(take, i)
+    if retval then
+      reaper.MIDI_SetNote(
+        take,
+        i,
+        selected,
+        muted,
+        start_ppq + delta_ppq,
+        end_ppq + delta_ppq,
+        chan,
+        pitch,
+        vel,
+        true
+      )
+    end
+  end
+
+  for i = 0, cc_count + text_count - 1 do
+    local retval, selected, muted, ppqpos, msg = reaper.MIDI_GetEvt(take, i)
+    if retval then
+      reaper.MIDI_SetEvt(take, i, selected, muted, ppqpos + delta_ppq, msg)
+    end
+  end
+
+  reaper.MIDI_Sort(take)
+end
+
 local function midi_items_at_time(track, start_time)
   local items = {}
   if not reaper.ValidatePtr2(project(), track, "MediaTrack*") then
