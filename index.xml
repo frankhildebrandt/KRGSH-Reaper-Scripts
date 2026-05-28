@@ -33,7 +33,7 @@ Fixed JSFX memory layout corruption.]]></description>
       <metadata>
         <description><![CDATA[ReaScript action set for fixed-length loop-block recording, overdubbing, progression, and navigation.]]></description>
       </metadata>
-      <version name="1.4.15" author="KRGSH" time="2026-05-28T00:00:00Z">
+      <version name="1.4.16" author="KRGSH" time="2026-05-28T00:00:00Z">
         <source file="Loop Composer Core.lua">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20Core.lua</source>
         <source file="Loop Composer - Set length to 4 bars.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%204%20bars.lua</source>
         <source file="Loop Composer - Set length to 8 bars.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%208%20bars.lua</source>

@@ -1,5 +1,5 @@
 -- @description Loop Composer - Queue loopstation recording
--- @version 1.4.15
+-- @version 1.4.16
 -- @author KRGSH
 -- @noindex
 -- @provides

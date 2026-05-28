@@ -312,50 +312,62 @@ local function midi_take_for_item(item)
   return nil
 end
 
-local function leading_silence_ppq(take, start_time)
+local function capture_midi_event_project_times(take)
+  local positions = {
+    notes = {},
+    ccs = {},
+    text = {},
+  }
   if not take or not reaper.TakeIsMIDI(take) then
-    return 0
+    return positions
   end
 
-  local block_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, start_time)
-  local earliest = math.huge
-  local _, note_count = reaper.MIDI_CountEvts(take)
-
+  local _, note_count, cc_count, text_count = reaper.MIDI_CountEvts(take)
   for i = 0, note_count - 1 do
-    local retval, _, _, start_ppq = reaper.MIDI_GetNote(take, i)
-    if retval and start_ppq < earliest then
-      earliest = start_ppq
+    local retval, selected, muted, start_ppq, end_ppq, chan, pitch, vel = reaper.MIDI_GetNote(take, i)
+    if retval then
+      positions.notes[i + 1] = {
+        start_time = reaper.MIDI_GetProjTimeFromPPQPos(take, start_ppq),
+        end_time = reaper.MIDI_GetProjTimeFromPPQPos(take, end_ppq),
+      }
     end
   end
 
-  if earliest == math.huge then
-    return 0
+  for i = 0, cc_count - 1 do
+    local retval, selected, muted, ppqpos, chanmsg, chan, msg2, msg3 = reaper.MIDI_GetCC(take, i)
+    if retval then
+      positions.ccs[i + 1] = reaper.MIDI_GetProjTimeFromPPQPos(take, ppqpos)
+    end
   end
 
-  local lead = earliest - block_ppq
-  if lead < 0 then
-    return 0
+  for i = 0, text_count - 1 do
+    local retval, selected, muted, ppqpos, msg_type, msg = reaper.MIDI_GetTextSysexEvt(take, i)
+    if retval then
+      positions.text[i + 1] = reaper.MIDI_GetProjTimeFromPPQPos(take, ppqpos)
+    end
   end
-  return lead
+
+  return positions
 end
 
-local function shift_midi_take_events(take, delta_ppq)
-  if not take or not reaper.TakeIsMIDI(take) or delta_ppq == 0 then
+local function restore_midi_event_project_times(take, positions)
+  if not take or not reaper.TakeIsMIDI(take) or not positions then
     return
   end
 
   local _, note_count, cc_count, text_count = reaper.MIDI_CountEvts(take)
 
   for i = 0, note_count - 1 do
+    local timing = positions.notes and positions.notes[i + 1]
     local retval, selected, muted, start_ppq, end_ppq, chan, pitch, vel = reaper.MIDI_GetNote(take, i)
-    if retval then
+    if retval and timing then
       reaper.MIDI_SetNote(
         take,
         i,
         selected,
         muted,
-        start_ppq + delta_ppq,
-        end_ppq + delta_ppq,
+        reaper.MIDI_GetPPQPosFromProjTime(take, timing.start_time),
+        reaper.MIDI_GetPPQPosFromProjTime(take, timing.end_time),
         chan,
         pitch,
         vel,
@@ -364,14 +376,65 @@ local function shift_midi_take_events(take, delta_ppq)
     end
   end
 
-  for i = 0, cc_count + text_count - 1 do
-    local retval, selected, muted, ppqpos, msg = reaper.MIDI_GetEvt(take, i)
-    if retval then
-      reaper.MIDI_SetEvt(take, i, selected, muted, ppqpos + delta_ppq, msg)
+  for i = 0, cc_count - 1 do
+    local project_time = positions.ccs and positions.ccs[i + 1]
+    local retval, selected, muted, ppqpos, chanmsg, chan, msg2, msg3 = reaper.MIDI_GetCC(take, i)
+    if retval and project_time then
+      reaper.MIDI_SetCC(
+        take,
+        i,
+        selected,
+        muted,
+        reaper.MIDI_GetPPQPosFromProjTime(take, project_time),
+        chanmsg,
+        chan,
+        msg2,
+        msg3,
+        true
+      )
+    end
+  end
+
+  for i = 0, text_count - 1 do
+    local project_time = positions.text and positions.text[i + 1]
+    local retval, selected, muted, ppqpos, msg_type, msg = reaper.MIDI_GetTextSysexEvt(take, i)
+    if retval and project_time then
+      reaper.MIDI_SetTextSysexEvt(
+        take,
+        i,
+        selected,
+        muted,
+        reaper.MIDI_GetPPQPosFromProjTime(take, project_time),
+        msg_type,
+        msg,
+        true
+      )
     end
   end
 
   reaper.MIDI_Sort(take)
+end
+
+local function insert_midi_leading_silence(item, start_time)
+  if not item or not reaper.ValidatePtr2(project(), item, "MediaItem*") then
+    return item
+  end
+
+  local take = midi_take_for_item(item)
+  if not take then
+    return item
+  end
+
+  local item_start, item_end = item_range(item)
+  if item_start <= start_time + 0.001 then
+    return item
+  end
+
+  local event_times = capture_midi_event_project_times(take)
+  reaper.SetMediaItemInfo_Value(item, "D_POSITION", start_time)
+  reaper.SetMediaItemInfo_Value(item, "D_LENGTH", math.max(0.001, item_end - start_time))
+  restore_midi_event_project_times(take, event_times)
+  return item
 end
 
 local function midi_items_at_time(track, start_time)
@@ -628,24 +691,12 @@ local function normalize_new_items(initial_guids, start_time, end_time, stopped_
   for _, item in ipairs(trim_candidates) do
     if reaper.ValidatePtr2(project(), item, "MediaItem*") then
       local trimmed = trim_item_to_start(item, start_time)
-      local lead_before = 0
-      if trimmed and reaper.ValidatePtr2(project(), trimmed, "MediaItem*") then
-        local trimmed_take = midi_take_for_item(trimmed)
-        lead_before = (trimmed_take and leading_silence_ppq(trimmed_take, start_time)) or 0
-      end
       local glued = nil
       if trimmed and reaper.ValidatePtr2(project(), trimmed, "MediaItem*") then
+        trimmed = insert_midi_leading_silence(trimmed, start_time)
         glued = glue_item_to_exact_length(trimmed, start_time, source_end)
       end
       if glued and reaper.ValidatePtr2(project(), glued, "MediaItem*") then
-        local glued_take = midi_take_for_item(glued)
-        if glued_take then
-          local lead_after = leading_silence_ppq(glued_take, start_time)
-          local shift_ppq = lead_before - lead_after
-          if shift_ppq > 0 then
-            shift_midi_take_events(glued_take, shift_ppq)
-          end
-        end
         local item_start = reaper.GetMediaItemInfo_Value(glued, "D_POSITION")
         local full_len = math.max(0.001, end_time - item_start)
         reaper.SetMediaItemInfo_Value(glued, "B_LOOPSRC", 1)
