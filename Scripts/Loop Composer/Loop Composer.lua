@@ -1,5 +1,5 @@
 -- @description Loop Composer
--- @version 1.4.7
+-- @version 1.4.8
 -- @author KRGSH
 -- @metapackage
 -- @provides
