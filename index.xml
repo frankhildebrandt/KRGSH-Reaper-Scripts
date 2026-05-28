@@ -54,9 +54,9 @@ Fixed JSFX memory layout corruption.]]></description>
     </reapack>
   </category>
   <metadata>
-    <link name="GitHub repository">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch</link>
     <description><![CDATA[{\rtf1\ansi
 KRGSH REAPER FX contains small JSFX MIDI utilities and workflow scripts for REAPER: pitch-bend removal, scale mapping, sustain-pedal assistance, and loop-block composition.
 }]]></description>
+    <link name="GitHub repository" href="https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch">GitHub repository</link>
   </metadata>
 </index>
