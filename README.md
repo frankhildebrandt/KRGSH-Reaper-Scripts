@@ -82,9 +82,10 @@ the selected maximum length, and normalizes early recordings to the largest
 fitting musical length (`1` or `2` beats, then `1`, `2`, `4`, `8`, `16`, `32`,
 or `64` bars). Normal recording starts one beat early and the preroll is trimmed
 at the block start before new MIDI and audio items are glued to that length and
-source-looped to fill the block. MIDI record-dub starts at the block start so it
-can overdub into the active MIDI clip. Existing items are left alone, so
-overdubs remain editable as separate items or lanes.
+source-looped to fill the block. MIDI record-dub plays from one beat before the
+block, then switches to recording at the block start so it can overdub into the
+active MIDI clip without missing the first beat. Existing items are left alone,
+so overdubs remain editable as separate items or lanes.
 
 `Start loopstation mode` keeps the current block looping in playback. While it
 runs, `Queue loopstation recording` arms the next pass: recording starts only

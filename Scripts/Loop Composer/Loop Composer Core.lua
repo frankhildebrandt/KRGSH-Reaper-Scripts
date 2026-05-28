@@ -780,18 +780,24 @@ function M.start_loop_recording()
   local bars = current_bars()
   local start_time = current_start()
   local use_prerecord = not recording_uses_midi_overdub()
-  local record_start_time = use_prerecord and time_one_beat_before(start_time) or start_time
+  local transport_start_time = time_one_beat_before(start_time)
   local end_time = block_end(start_time, bars)
   local record_context = begin_target_recording_context()
   local initial_guids = snapshot_item_guids()
+  local recording_started = false
   local finalized = false
   local last_pos = reaper.GetPlayPositionEx(project())
 
   set_loop_range(start_time, end_time, false)
-  reaper.SetEditCurPos2(project(), record_start_time, true, false)
+  reaper.SetEditCurPos2(project(), transport_start_time, true, false)
   reaper.GetSetRepeat(1)
-  reaper.Main_OnCommand(1013, 0) -- Transport: Record
-  last_pos = record_start_time
+  if use_prerecord then
+    reaper.Main_OnCommand(1013, 0) -- Transport: Record
+    recording_started = true
+  else
+    reaper.Main_OnCommand(1007, 0) -- Transport: Play
+  end
+  last_pos = transport_start_time
 
   local function finalize(stopped_at)
     if finalized then
@@ -812,17 +818,31 @@ function M.start_loop_recording()
 
   local function watch()
     local state = reaper.GetPlayStateEx(project())
+    local is_playing = (state & 1) == 1
     local is_recording = (state & 4) == 4
     local play_pos = reaper.GetPlayPositionEx(project())
     local reached_end = play_pos >= end_time - 0.02 or play_pos < last_pos - 0.02
 
-    if is_recording and reached_end then
+    if not recording_started and (play_pos >= start_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON) then
+      reaper.Main_OnCommand(1013, 0) -- Transport: Record
+      recording_started = true
+      last_pos = play_pos
+      reaper.defer(watch)
+      return
+    end
+
+    if recording_started and is_recording and reached_end then
       reaper.Main_OnCommand(1016, 0) -- Transport: Stop
       finalize(end_time)
       return
     end
 
-    if not is_recording then
+    if recording_started and not is_recording then
+      finalize(reaper.GetCursorPositionEx(project()))
+      return
+    end
+
+    if not recording_started and not is_playing then
       finalize(reaper.GetCursorPositionEx(project()))
       return
     end
@@ -870,6 +890,7 @@ function M.queue_loopstation_recording(target_track)
   local use_prerecord = not recording_uses_midi_overdub(target_tracks)
   local record_start_time = use_prerecord and time_one_beat_before(start_time) or start_time
   local loop_record_start_time = use_prerecord and time_one_beat_before(end_time) or start_time
+  local transport_start_time = use_prerecord and record_start_time or time_one_beat_before(start_time)
 
   clear_ext(LOOPSTATION_STOP_KEY)
   clear_ext(REPLACE_AND_QUEUE_KEY)
@@ -884,14 +905,18 @@ function M.queue_loopstation_recording(target_track)
 
   local state = reaper.GetPlayStateEx(project())
   if (state & 1) ~= 1 then
-    reaper.SetEditCurPos2(project(), record_start_time, true, false)
-    record_context = begin_target_recording_context(target_tracks)
-    initial_guids = snapshot_item_guids()
-    set_ext(LOOPSTATION_QUEUE_KEY, "recording")
-    recording_started = true
-    recording_reached_block_start = true
-    reaper.Main_OnCommand(1013, 0) -- Transport: Record
-    last_pos = record_start_time
+    reaper.SetEditCurPos2(project(), transport_start_time, true, false)
+    if use_prerecord then
+      record_context = begin_target_recording_context(target_tracks)
+      initial_guids = snapshot_item_guids()
+      set_ext(LOOPSTATION_QUEUE_KEY, "recording")
+      recording_started = true
+      recording_reached_block_start = true
+      reaper.Main_OnCommand(1013, 0) -- Transport: Record
+    else
+      reaper.Main_OnCommand(1007, 0) -- Transport: Play
+    end
+    last_pos = transport_start_time
   elseif last_pos < start_time or last_pos >= end_time then
     reaper.SetEditCurPos2(project(), start_time, true, false)
     last_pos = start_time
@@ -968,6 +993,9 @@ function M.queue_loopstation_recording(target_track)
       set_ext(LOOPSTATION_QUEUE_KEY, "recording")
       recording_started = true
       recording_started_from_loop_preroll = true
+      if not use_prerecord then
+        recording_reached_block_start = true
+      end
       reaper.Main_OnCommand(1013, 0) -- Transport: Record
       last_pos = play_pos
       reaper.defer(watch)

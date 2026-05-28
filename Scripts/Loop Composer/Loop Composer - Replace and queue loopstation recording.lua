@@ -1,5 +1,5 @@
 -- @description Loop Composer - Replace and queue loopstation recording
--- @version 1.4.2
+-- @version 1.4.3
 -- @author KRGSH
 -- @noindex
 -- @provides
