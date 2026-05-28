@@ -84,8 +84,10 @@ or `64` bars). Normal recording starts one beat early and the preroll is trimmed
 at the block start before new MIDI and audio items are glued to that length and
 source-looped to fill the block. MIDI record-dub plays from one beat before the
 block, then switches to recording just before the block start so it can overdub
-into the active MIDI clip without missing the first beat. Existing items are
-left alone, so overdubs remain editable as separate items or lanes.
+into the active MIDI clip without missing the first beat. If the target block
+does not contain a MIDI clip yet, Loop Composer creates an empty one before
+recording starts. Existing items are left alone, so overdubs remain editable as
+separate items or lanes.
 
 `Start loopstation mode` keeps the current block looping in playback. While it
 runs, `Queue loopstation recording` arms the next pass: recording starts only
