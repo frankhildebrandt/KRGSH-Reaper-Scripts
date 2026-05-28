@@ -1,5 +1,5 @@
 -- @description Loop Composer - Create next loop block from current
--- @version 1.2.0
+-- @version 1.2.1
 -- @author KRGSH
 -- @noindex
 -- @provides
