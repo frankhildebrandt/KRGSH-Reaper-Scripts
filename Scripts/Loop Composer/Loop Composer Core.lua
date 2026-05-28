@@ -58,6 +58,11 @@ local function time_at_measure_beat(measure, beat)
   return reaper.TimeMap2_beatsToTime(project(), beat, measure)
 end
 
+local function time_one_beat_before(time)
+  local qn = reaper.TimeMap2_timeToQN(project(), time)
+  return reaper.TimeMap2_QNToTime(project(), math.max(0, qn - 1))
+end
+
 local function current_bars()
   local bars = tonumber(get_ext("loop_bars", DEFAULT_BARS)) or DEFAULT_BARS
   if bars ~= 4 and bars ~= 8 and bars ~= 16 and bars ~= 32 and bars ~= 64 then
@@ -200,10 +205,26 @@ local function select_only_item(item)
   reaper.UpdateArrange()
 end
 
-local function glue_item_to_exact_length(item, start_time, source_end)
-  reaper.SetMediaItemInfo_Value(item, "D_POSITION", start_time)
-  local item_start = start_time
+local function trim_item_to_start(item, start_time)
+  local item_start, item_end = item_range(item)
+  if item_end <= start_time then
+    return nil
+  end
 
+  if item_start < start_time - 0.001 then
+    local right_item = reaper.SplitMediaItem(item, start_time)
+    if right_item then
+      local track = reaper.GetMediaItem_Track(item)
+      reaper.DeleteTrackMediaItem(track, item)
+      return right_item
+    end
+  end
+
+  return item
+end
+
+local function glue_item_to_exact_length(item, start_time, source_end)
+  local item_start = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
   local source_len = math.max(0.001, source_end - item_start)
   reaper.SetMediaItemInfo_Value(item, "D_LENGTH", source_len)
   reaper.SetMediaItemInfo_Value(item, "B_LOOPSRC", 0)
@@ -214,18 +235,33 @@ local function glue_item_to_exact_length(item, start_time, source_end)
   return glued or item
 end
 
-local function normalize_new_items(initial_guids, start_time, end_time, stopped_at)
+local function normalize_new_items(initial_guids, start_time, end_time, stopped_at, discard_preroll_tail_from)
   local new_items = collect_new_items(initial_guids, start_time, end_time)
   if #new_items == 0 then
     return {}
   end
 
   local recorded_end = stopped_at
+  local trim_candidates = {}
+  local discard_from = discard_preroll_tail_from or math.huge
   for _, item in ipairs(new_items) do
-    local _, item_end = item_range(item)
-    if item_end > recorded_end then
-      recorded_end = item_end
+    if reaper.ValidatePtr2(project(), item, "MediaItem*") then
+      local item_start, item_end = item_range(item)
+      if item_start >= discard_from - 0.001 then
+        local track = reaper.GetMediaItem_Track(item)
+        reaper.DeleteTrackMediaItem(track, item)
+      else
+        trim_candidates[#trim_candidates + 1] = item
+        if item_end > recorded_end then
+          recorded_end = item_end
+        end
+      end
     end
+  end
+
+  if #trim_candidates == 0 then
+    reaper.UpdateArrange()
+    return {}
   end
 
   local max_bars = current_bars()
@@ -233,10 +269,14 @@ local function normalize_new_items(initial_guids, start_time, end_time, stopped_
 
   local normalized_items = {}
   reaper.PreventUIRefresh(1)
-  for _, item in ipairs(new_items) do
+  for _, item in ipairs(trim_candidates) do
     if reaper.ValidatePtr2(project(), item, "MediaItem*") then
-      local glued = glue_item_to_exact_length(item, start_time, source_end)
-      if reaper.ValidatePtr2(project(), glued, "MediaItem*") then
+      local trimmed = trim_item_to_start(item, start_time)
+      local glued = nil
+      if trimmed and reaper.ValidatePtr2(project(), trimmed, "MediaItem*") then
+        glued = glue_item_to_exact_length(trimmed, start_time, source_end)
+      end
+      if glued and reaper.ValidatePtr2(project(), glued, "MediaItem*") then
         local item_start = reaper.GetMediaItemInfo_Value(glued, "D_POSITION")
         local full_len = math.max(0.001, end_time - item_start)
         reaper.SetMediaItemInfo_Value(glued, "B_LOOPSRC", 1)
@@ -392,14 +432,17 @@ end
 function M.start_loop_recording()
   local bars = current_bars()
   local start_time = current_start()
+  local prerecord_time = time_one_beat_before(start_time)
   local end_time = block_end(start_time, bars)
   local initial_guids = snapshot_item_guids()
   local finalized = false
   local last_pos = reaper.GetPlayPositionEx(project())
 
-  set_loop_range(start_time, end_time, true)
+  set_loop_range(start_time, end_time, false)
+  reaper.SetEditCurPos2(project(), prerecord_time, true, false)
   reaper.GetSetRepeat(1)
   reaper.Main_OnCommand(1013, 0) -- Transport: Record
+  last_pos = prerecord_time
 
   local function finalize(stopped_at)
     if finalized then
@@ -453,9 +496,13 @@ end
 function M.queue_loopstation_recording()
   local bars = current_bars()
   local start_time = current_start()
+  local prerecord_time = time_one_beat_before(start_time)
   local end_time = block_end(start_time, bars)
+  local loop_prerecord_time = time_one_beat_before(end_time)
   local initial_guids = nil
   local recording_started = false
+  local recording_started_from_loop_preroll = false
+  local recording_reached_block_start = false
   local finalized = false
   local last_pos = reaper.GetPlayPositionEx(project())
 
@@ -466,11 +513,12 @@ function M.queue_loopstation_recording()
 
   local state = reaper.GetPlayStateEx(project())
   if (state & 1) ~= 1 then
-    reaper.SetEditCurPos2(project(), start_time, true, false)
+    reaper.SetEditCurPos2(project(), prerecord_time, true, false)
     initial_guids = snapshot_item_guids()
     recording_started = true
+    recording_reached_block_start = true
     reaper.Main_OnCommand(1013, 0) -- Transport: Record
-    last_pos = start_time
+    last_pos = prerecord_time
   elseif last_pos < start_time or last_pos >= end_time then
     reaper.SetEditCurPos2(project(), start_time, true, false)
     last_pos = start_time
@@ -485,7 +533,14 @@ function M.queue_loopstation_recording()
 
     if initial_guids then
       reaper.Undo_BeginBlock2(project())
-      local items = normalize_new_items(initial_guids, start_time, end_time, stopped_at or reaper.GetCursorPositionEx(project()))
+      local discard_preroll_tail_from = recording_started_from_loop_preroll and loop_prerecord_time or nil
+      local items = normalize_new_items(
+        initial_guids,
+        start_time,
+        end_time,
+        stopped_at or reaper.GetCursorPositionEx(project()),
+        discard_preroll_tail_from
+      )
       store_last_loopstation_take(items)
       set_loop_range(start_time, end_time, false)
       reaper.Undo_EndBlock2(project(), "Loop Composer: loopstation recording", -1)
@@ -501,8 +556,8 @@ function M.queue_loopstation_recording()
     return play_pos <= start_time + EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON
   end
 
-  local function reached_loop_end(play_pos)
-    return play_pos >= end_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON
+  local function at_loop_prerecord_start(play_pos)
+    return play_pos >= loop_prerecord_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON
   end
 
   local function watch()
@@ -525,16 +580,21 @@ function M.queue_loopstation_recording()
       return
     end
 
-    if not recording_started and at_loop_start(play_pos) then
+    if not recording_started and at_loop_prerecord_start(play_pos) then
       initial_guids = snapshot_item_guids()
       recording_started = true
+      recording_started_from_loop_preroll = true
       reaper.Main_OnCommand(1013, 0) -- Transport: Record
       last_pos = play_pos
       reaper.defer(watch)
       return
     end
 
-    if recording_started and is_recording and reached_loop_end(play_pos) then
+    if recording_started and recording_started_from_loop_preroll and at_loop_start(play_pos) then
+      recording_reached_block_start = true
+    end
+
+    if recording_started and is_recording and recording_reached_block_start and play_pos >= end_time - EDGE_EPSILON then
       reaper.Main_OnCommand(1007, 0) -- Transport: Play
       finalize(end_time)
       return

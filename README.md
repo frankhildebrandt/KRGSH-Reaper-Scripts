@@ -80,9 +80,10 @@ active block is represented by REAPER's loop points and time selection.
 `Start loop recording` records into the current block, stops automatically at
 the selected maximum length, and normalizes early recordings to the largest
 fitting musical length (`1` or `2` beats, then `1`, `2`, `4`, `8`, `16`, `32`,
-or `64` bars). New MIDI and audio items are anchored to the block start, glued
-to that length, and then source-looped to fill the block. Existing items are
-left alone, so overdubs remain editable as separate items or lanes.
+or `64` bars). Recording starts one beat early and the preroll is trimmed at
+the block start before new MIDI and audio items are glued to that length and
+source-looped to fill the block. Existing items are left alone, so overdubs
+remain editable as separate items or lanes.
 
 `Start loopstation mode` keeps the current block looping in playback. While it
 runs, `Queue loopstation recording` arms the next pass: recording starts only
