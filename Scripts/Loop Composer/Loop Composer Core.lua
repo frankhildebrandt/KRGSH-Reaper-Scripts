@@ -7,7 +7,6 @@ local DEFAULT_BARS = 8
 local BAR_CHOICES = { 1, 2, 4, 8, 16, 32, 64 }
 local BEAT_CHOICES = { 1, 2 }
 local EDGE_EPSILON = 0.05
-local MIDI_OVERDUB_RECORD_LEAD = 0.12
 local LOOPSTATION_STOP_KEY = "loopstation_stop_requested"
 local LOOPSTATION_QUEUE_KEY = "loopstation_queue_state"
 local LAST_TAKE_GUIDS_KEY = "last_loopstation_take_guids"
@@ -153,15 +152,6 @@ local function time_at_measure_beat(measure, beat)
     measure = 0
   end
   return reaper.TimeMap2_beatsToTime(project(), beat, measure)
-end
-
-local function time_one_beat_before(time)
-  local qn = reaper.TimeMap2_timeToQN(project(), time)
-  return reaper.TimeMap2_QNToTime(project(), math.max(0, qn - 1))
-end
-
-local function time_before(time, seconds)
-  return math.max(0, time - seconds)
 end
 
 local function precise_time()
@@ -873,9 +863,6 @@ function M.start_loop_recording()
   local bars = current_bars()
   local start_time = current_start()
   local use_midi_overdub = recording_uses_midi_overdub()
-  local use_prerecord = not use_midi_overdub
-  local transport_start_time = time_one_beat_before(start_time)
-  local record_trigger_time = use_prerecord and transport_start_time or time_before(start_time, MIDI_OVERDUB_RECORD_LEAD)
   local end_time = block_end(start_time, bars)
   local record_context = begin_target_recording_context()
   if use_midi_overdub then
@@ -889,16 +876,12 @@ function M.start_loop_recording()
   local last_pos = reaper.GetPlayPositionEx(project())
 
   set_loop_range(start_time, end_time, false)
-  reaper.SetEditCurPos2(project(), transport_start_time, true, false)
+  reaper.SetEditCurPos2(project(), start_time, true, false)
   reaper.GetSetRepeat(1)
-  if use_prerecord then
-    reaper.Main_OnCommand(1013, 0) -- Transport: Record
-    recording_started = true
-    recording_started_at = precise_time()
-  else
-    reaper.Main_OnCommand(1007, 0) -- Transport: Play
-  end
-  last_pos = transport_start_time
+  reaper.Main_OnCommand(1013, 0) -- Transport: Record
+  recording_started = true
+  recording_started_at = precise_time()
+  last_pos = start_time
 
   local function finalize(stopped_at)
     if finalized then
@@ -925,15 +908,6 @@ function M.start_loop_recording()
     local reached_end = play_pos >= end_time - 0.02 or play_pos < last_pos - 0.02
     if is_recording then
       recording_seen = true
-    end
-
-    if not recording_started and (play_pos >= record_trigger_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON) then
-      reaper.Main_OnCommand(1013, 0) -- Transport: Record
-      recording_started = true
-      recording_started_at = precise_time()
-      last_pos = play_pos
-      reaper.defer(watch)
-      return
     end
 
     if recording_started and is_recording and reached_end then
@@ -981,7 +955,6 @@ function M.queue_loopstation_recording(target_track)
   local initial_guids = nil
   local record_context = nil
   local recording_started = false
-  local recording_started_from_loop_preroll = false
   local recording_reached_block_start = false
   local recording_seen = false
   local recording_started_at = nil
@@ -996,11 +969,6 @@ function M.queue_loopstation_recording(target_track)
   end
 
   local use_midi_overdub = recording_uses_midi_overdub(target_tracks)
-  local use_prerecord = not use_midi_overdub
-  local record_start_time = use_prerecord and time_one_beat_before(start_time) or start_time
-  local first_record_start_time = use_prerecord and record_start_time or time_before(start_time, MIDI_OVERDUB_RECORD_LEAD)
-  local loop_record_start_time = use_prerecord and time_one_beat_before(end_time) or time_before(end_time, MIDI_OVERDUB_RECORD_LEAD)
-  local transport_start_time = use_prerecord and record_start_time or time_one_beat_before(start_time)
 
   clear_ext(LOOPSTATION_STOP_KEY)
   clear_ext(REPLACE_AND_QUEUE_KEY)
@@ -1015,19 +983,18 @@ function M.queue_loopstation_recording(target_track)
 
   local state = reaper.GetPlayStateEx(project())
   if (state & 1) ~= 1 then
-    reaper.SetEditCurPos2(project(), transport_start_time, true, false)
-    if use_prerecord then
-      record_context = begin_target_recording_context(target_tracks)
-      initial_guids = snapshot_item_guids()
-      set_ext(LOOPSTATION_QUEUE_KEY, "recording")
-      recording_started = true
-      recording_reached_block_start = true
-      recording_started_at = precise_time()
-      reaper.Main_OnCommand(1013, 0) -- Transport: Record
-    else
-      reaper.Main_OnCommand(1007, 0) -- Transport: Play
+    reaper.SetEditCurPos2(project(), start_time, true, false)
+    record_context = begin_target_recording_context(target_tracks)
+    if use_midi_overdub then
+      ensure_midi_items_for_overdub(overdub_target_tracks(target_tracks), start_time, end_time)
     end
-    last_pos = transport_start_time
+    initial_guids = snapshot_item_guids()
+    set_ext(LOOPSTATION_QUEUE_KEY, "recording")
+    recording_started = true
+    recording_reached_block_start = true
+    recording_started_at = precise_time()
+    reaper.Main_OnCommand(1013, 0) -- Transport: Record
+    last_pos = start_time
   elseif last_pos < start_time or last_pos >= end_time then
     reaper.SetEditCurPos2(project(), start_time, true, false)
     last_pos = start_time
@@ -1044,13 +1011,11 @@ function M.queue_loopstation_recording(target_track)
 
     if initial_guids then
       reaper.Undo_BeginBlock2(project())
-      local discard_preroll_tail_from = use_prerecord and recording_started_from_loop_preroll and loop_record_start_time or nil
       local items = normalize_new_items(
         initial_guids,
         start_time,
         end_time,
-        stopped_at or reaper.GetCursorPositionEx(project()),
-        discard_preroll_tail_from
+        stopped_at or reaper.GetCursorPositionEx(project())
       )
       store_last_loopstation_take(items)
       set_loop_range(start_time, end_time, false)
@@ -1069,16 +1034,6 @@ function M.queue_loopstation_recording(target_track)
 
   local function at_loop_start(play_pos)
     return play_pos <= start_time + EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON
-  end
-
-  local function at_loop_prerecord_start(play_pos)
-    if use_prerecord then
-      return play_pos >= loop_record_start_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON
-    end
-    if last_pos < start_time then
-      return play_pos >= first_record_start_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON
-    end
-    return play_pos >= loop_record_start_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON
   end
 
   local function watch()
@@ -1107,7 +1062,7 @@ function M.queue_loopstation_recording(target_track)
       return
     end
 
-    if not recording_started and at_loop_prerecord_start(play_pos) then
+    if not recording_started and at_loop_start(play_pos) then
       record_context = begin_target_recording_context(target_tracks)
       if use_midi_overdub then
         ensure_midi_items_for_overdub(overdub_target_tracks(target_tracks), start_time, end_time)
@@ -1115,19 +1070,12 @@ function M.queue_loopstation_recording(target_track)
       initial_guids = snapshot_item_guids()
       set_ext(LOOPSTATION_QUEUE_KEY, "recording")
       recording_started = true
-      recording_started_from_loop_preroll = true
       recording_started_at = precise_time()
-      if not use_prerecord then
-        recording_reached_block_start = true
-      end
+      recording_reached_block_start = true
       reaper.Main_OnCommand(1013, 0) -- Transport: Record
       last_pos = play_pos
       reaper.defer(watch)
       return
-    end
-
-    if recording_started and recording_started_from_loop_preroll and at_loop_start(play_pos) then
-      recording_reached_block_start = true
     end
 
     if recording_started and is_recording and recording_reached_block_start and play_pos >= end_time - EDGE_EPSILON then
