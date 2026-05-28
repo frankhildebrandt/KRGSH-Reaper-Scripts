@@ -92,6 +92,32 @@ local function arm_track(track)
   end
 end
 
+local function disarm_all_tracks_except(allowed)
+  allowed = allowed or {}
+  local count = reaper.CountTracks(project())
+  for i = 0, count - 1 do
+    local track = reaper.GetTrack(project(), i)
+    if not allowed[tostring(track)] then
+      reaper.SetMediaTrackInfo_Value(track, "I_RECARM", 0)
+    end
+  end
+end
+
+local function arm_tracks_exclusive(tracks)
+  local allowed = {}
+  for _, track in ipairs(tracks or {}) do
+    if reaper.ValidatePtr2(project(), track, "MediaTrack*") then
+      allowed[tostring(track)] = true
+    end
+  end
+
+  disarm_all_tracks_except(allowed)
+  for _, track in ipairs(tracks or {}) do
+    arm_track(track)
+  end
+  reaper.UpdateArrange()
+end
+
 local function loopstation_stop_requested()
   return get_ext(LOOPSTATION_STOP_KEY, "") == "1"
 end
@@ -500,6 +526,8 @@ local function begin_target_recording_context()
     return { restore = function() end }
   end
 
+  arm_tracks_exclusive(targets)
+
   local track_count = reaper.CountTracks(project())
   local states = {}
   for i = 0, track_count - 1 do
@@ -515,7 +543,6 @@ local function begin_target_recording_context()
 
   for _, track in ipairs(targets) do
     reaper.SetTrackSelected(track, true)
-    arm_track(track)
   end
 
   return {
@@ -1007,16 +1034,18 @@ end
 
 function M.set_target_tracks_from_selection()
   local slots = {}
+  local tracks = {}
   local count = reaper.CountSelectedTracks(project())
   for i = 0, count - 1 do
     local track = reaper.GetSelectedTrack(project(), i)
     local guid = track_guid(track)
     if guid ~= "" then
       slots[#slots + 1] = { guid = guid, enabled = true }
-      arm_track(track)
+      tracks[#tracks + 1] = track
     end
   end
   set_ext(TARGET_TRACKS_KEY, encode_target_tracks(slots))
+  arm_tracks_exclusive(tracks)
   return #slots
 end
 
@@ -1051,7 +1080,7 @@ function M.select_target_track(index)
   end
   reaper.SetTrackSelected(track, true)
   reaper.SetOnlyTrackSelected(track)
-  arm_track(track)
+  arm_tracks_exclusive({ track })
   reaper.UpdateArrange()
   return true
 end
