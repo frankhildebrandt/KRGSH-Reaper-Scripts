@@ -1,5 +1,5 @@
 -- @description Loop Composer - Start loopstation mode
--- @version 1.4.8
+-- @version 1.4.9
 -- @author KRGSH
 -- @noindex
 -- @provides

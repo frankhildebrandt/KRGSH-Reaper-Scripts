@@ -1,5 +1,5 @@
 -- @description Loop Composer - Open view
--- @version 1.4.8
+-- @version 1.4.9
 -- @author KRGSH
 -- @noindex
 -- @provides

@@ -513,6 +513,7 @@ end
 local function normalize_new_items(initial_guids, start_time, end_time, stopped_at, discard_preroll_tail_from, extra_items)
   local new_items = collect_new_items(initial_guids, start_time, end_time)
   local seen = {}
+  local extra_item_guids = {}
   for _, item in ipairs(new_items) do
     seen[item_guid(item)] = true
   end
@@ -521,6 +522,10 @@ local function normalize_new_items(initial_guids, start_time, end_time, stopped_
     if reaper.ValidatePtr2(project(), item, "MediaItem*") then
       local item_start, item_end = item_range(item)
       if overlaps(item_start, item_end, start_time, end_time) then
+        local guid = item_guid(item)
+        if guid ~= "" then
+          extra_item_guids[guid] = true
+        end
         append_item_once(new_items, seen, item)
       end
     end
@@ -541,7 +546,7 @@ local function normalize_new_items(initial_guids, start_time, end_time, stopped_
         reaper.DeleteTrackMediaItem(track, item)
       else
         trim_candidates[#trim_candidates + 1] = item
-        if item_end > recorded_end then
+        if not extra_item_guids[item_guid(item)] and item_end > recorded_end then
           recorded_end = item_end
         end
       end
