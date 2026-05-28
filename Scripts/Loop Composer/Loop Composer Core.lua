@@ -5,6 +5,7 @@ local M = {}
 local SECTION = "KRGSH_LOOP_COMPOSER"
 local DEFAULT_BARS = 8
 local BAR_CHOICES = { 1, 2, 4, 8, 16, 32, 64 }
+local BEAT_CHOICES = { 1, 2 }
 local EDGE_EPSILON = 0.05
 local LOOPSTATION_STOP_KEY = "loopstation_stop_requested"
 local LAST_TAKE_GUIDS_KEY = "last_loopstation_take_guids"
@@ -48,6 +49,13 @@ local function time_at_measure(measure)
     measure = 0
   end
   return reaper.TimeMap2_beatsToTime(project(), 0, measure)
+end
+
+local function time_at_measure_beat(measure, beat)
+  if measure < 0 then
+    measure = 0
+  end
+  return reaper.TimeMap2_beatsToTime(project(), beat, measure)
 end
 
 local function current_bars()
@@ -94,21 +102,28 @@ local function save_block_start(start_time)
   return snapped
 end
 
-local function source_bars_for_duration(start_time, end_time, max_bars)
-  local chosen = 1
+local function source_end_for_duration(start_time, end_time, max_bars)
+  local chosen_end = nil
   local start_measure = measure_at_time(start_time)
   local epsilon = 0.03
+
+  for _, beats in ipairs(BEAT_CHOICES) do
+    local candidate_end = time_at_measure_beat(start_measure, beats)
+    if candidate_end <= end_time + epsilon then
+      chosen_end = candidate_end
+    end
+  end
 
   for _, bars in ipairs(BAR_CHOICES) do
     if bars <= max_bars then
       local candidate_end = time_at_measure(start_measure + bars)
       if candidate_end <= end_time + epsilon then
-        chosen = bars
+        chosen_end = candidate_end
       end
     end
   end
 
-  return chosen
+  return chosen_end or time_at_measure_beat(start_measure, BEAT_CHOICES[1])
 end
 
 local function item_guid(item)
@@ -186,11 +201,8 @@ local function select_only_item(item)
 end
 
 local function glue_item_to_exact_length(item, start_time, source_end)
-  local item_start = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-  if math.abs(item_start - start_time) < 0.03 then
-    reaper.SetMediaItemInfo_Value(item, "D_POSITION", start_time)
-    item_start = start_time
-  end
+  reaper.SetMediaItemInfo_Value(item, "D_POSITION", start_time)
+  local item_start = start_time
 
   local source_len = math.max(0.001, source_end - item_start)
   reaper.SetMediaItemInfo_Value(item, "D_LENGTH", source_len)
@@ -217,17 +229,15 @@ local function normalize_new_items(initial_guids, start_time, end_time, stopped_
   end
 
   local max_bars = current_bars()
-  local source_bars = source_bars_for_duration(start_time, recorded_end, max_bars)
-  local source_end = time_at_measure(measure_at_time(start_time) + source_bars)
+  local source_end = source_end_for_duration(start_time, recorded_end, max_bars)
 
   local normalized_items = {}
   reaper.PreventUIRefresh(1)
   for _, item in ipairs(new_items) do
     if reaper.ValidatePtr2(project(), item, "MediaItem*") then
-      local item_start = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
       local glued = glue_item_to_exact_length(item, start_time, source_end)
       if reaper.ValidatePtr2(project(), glued, "MediaItem*") then
-        item_start = reaper.GetMediaItemInfo_Value(glued, "D_POSITION")
+        local item_start = reaper.GetMediaItemInfo_Value(glued, "D_POSITION")
         local full_len = math.max(0.001, end_time - item_start)
         reaper.SetMediaItemInfo_Value(glued, "B_LOOPSRC", 1)
         reaper.SetMediaItemInfo_Value(glued, "D_LENGTH", full_len)
@@ -457,7 +467,9 @@ function M.queue_loopstation_recording()
   local state = reaper.GetPlayStateEx(project())
   if (state & 1) ~= 1 then
     reaper.SetEditCurPos2(project(), start_time, true, false)
-    reaper.Main_OnCommand(1007, 0) -- Transport: Play
+    initial_guids = snapshot_item_guids()
+    recording_started = true
+    reaper.Main_OnCommand(1013, 0) -- Transport: Record
     last_pos = start_time
   elseif last_pos < start_time or last_pos >= end_time then
     reaper.SetEditCurPos2(project(), start_time, true, false)
