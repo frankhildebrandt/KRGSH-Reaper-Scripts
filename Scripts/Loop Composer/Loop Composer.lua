@@ -14,6 +14,7 @@
 --   [main] Loop Composer - Queue loopstation recording.lua
 --   [main] Loop Composer - Stop loopstation recording.lua
 --   [main] Loop Composer - Replace and queue loopstation recording.lua
+--   [main] Loop Composer - Open view.lua
 --   [main] Loop Composer - Set current loop block from edit cursor.lua
 --   [main] Loop Composer - Go to previous loop block.lua
 --   [main] Loop Composer - Go to next loop block.lua
@@ -21,4 +22,4 @@
 --   [main] Loop Composer - Install standard toolbar.lua
 -- @about
 --   ReaScript action set for fixed-length loop-block recording, overdubbing,
---   progression, and navigation.
+--   progression, navigation, and a compact SWS-assisted control view.

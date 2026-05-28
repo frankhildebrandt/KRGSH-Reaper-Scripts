@@ -67,6 +67,7 @@ Available actions:
 - `Loop Composer - Queue loopstation recording`
 - `Loop Composer - Stop loopstation recording`
 - `Loop Composer - Replace and queue loopstation recording`
+- `Loop Composer - Open view`
 - `Loop Composer - Set current loop block from edit cursor`
 - `Loop Composer - Go to previous loop block`
 - `Loop Composer - Go to next loop block`
@@ -97,6 +98,12 @@ start.
 current block into the next block, moves the edit cursor there, and updates the
 loop points. `Go to previous loop block` and `Go to next loop block` navigate
 without copying content, including to empty blocks.
+
+`Open view` opens a compact Loop Composer control window. It shows the active
+block length, measures, time range, transport state, and SWS status; it also
+provides buttons for length changes, loopstation recording, navigation, block
+creation, and block recording. When the SWS extension is installed, the `Zoom`
+button uses SWS arrange-view tools to focus the current loop block.
 
 `Install standard toolbar` creates `Loop Composer Toolbar.ReaperMenu` in the
 REAPER resource path, installs the included toolbar icons, and tells you where

@@ -13,6 +13,7 @@
 --   [data] ../../Data/toolbar_icons/loop_composer_queue_record.svg
 --   [data] ../../Data/toolbar_icons/loop_composer_stop_record.svg
 --   [data] ../../Data/toolbar_icons/loop_composer_replace_queue.svg
+--   [data] ../../Data/toolbar_icons/loop_composer_view.svg
 --   [data] ../../Data/toolbar_icons/loop_composer_prev.svg
 --   [data] ../../Data/toolbar_icons/loop_composer_next.svg
 --   [data] ../../Data/toolbar_icons/loop_composer_create_next.svg
@@ -58,6 +59,8 @@ local function copy_file(source, destination)
   return write_file(destination, data)
 end
 
+local script_dir
+
 local function command_id_for_script(script_file)
   local command_id = reaper.AddRemoveReaScript(true, 0, join_path(script_dir, script_file), true)
   if not command_id or command_id == 0 then
@@ -67,7 +70,7 @@ local function command_id_for_script(script_file)
 end
 
 local script_path = ({ reaper.get_action_context() })[2]
-local script_dir = path_dir(script_path)
+script_dir = path_dir(script_path)
 local repo_root = script_dir:gsub("[/\\]Scripts[/\\]Loop Composer[/\\]?$", "")
 local resource_path = reaper.GetResourcePath()
 local icon_source_dir = join_path(join_path(repo_root, "Data"), "toolbar_icons")
@@ -90,6 +93,7 @@ local actions = {
   { "Loop Composer - Stop loopstation recording.lua", "loop_composer_stop_record.svg", "Stop rec" },
   { "Loop Composer - Replace and queue loopstation recording.lua", "loop_composer_replace_queue.svg", "Retry rec" },
   { "Loop Composer - Start loop recording.lua", "loop_composer_record.svg", "Record block" },
+  { "Loop Composer - Open view.lua", "loop_composer_view.svg", "View" },
   { "", "", "" },
   { "Loop Composer - Set current loop block from edit cursor.lua", "loop_composer_set_block.svg", "Set block" },
   { "Loop Composer - Go to previous loop block.lua", "loop_composer_prev.svg", "Prev block" },

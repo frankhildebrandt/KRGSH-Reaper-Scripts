@@ -296,6 +296,45 @@ local function delete_items_by_guids(guids, start_time, end_time)
   return deleted
 end
 
+local function sws_available()
+  return reaper.APIExists and reaper.APIExists("CF_GetSWSVersion") and reaper.APIExists("BR_SetArrangeView")
+end
+
+local function sws_version()
+  if reaper.APIExists and reaper.APIExists("CF_GetSWSVersion") then
+    return reaper.CF_GetSWSVersion()
+  end
+  return nil
+end
+
+local function format_position(time)
+  return reaper.format_timestr_pos(time, "", 2)
+end
+
+local function loop_status()
+  local bars = current_bars()
+  local start_time = current_start()
+  local end_time = block_end(start_time, bars)
+  local start_measure = measure_at_time(start_time) + 1
+  local end_measure = measure_at_time(end_time)
+  local play_state = reaper.GetPlayStateEx(project())
+
+  return {
+    bars = bars,
+    start_time = start_time,
+    end_time = end_time,
+    start_position = format_position(start_time),
+    end_position = format_position(end_time),
+    start_measure = start_measure,
+    end_measure = end_measure,
+    is_playing = (play_state & 1) == 1,
+    is_recording = (play_state & 4) == 4,
+    repeat_enabled = reaper.GetSetRepeat(-1) == 1,
+    sws_available = sws_available(),
+    sws_version = sws_version(),
+  }
+end
+
 function M.set_length(bars)
   reaper.Undo_BeginBlock2(project())
   set_ext("loop_bars", bars)
@@ -536,6 +575,24 @@ function M.apply_current_loop()
   reaper.Undo_BeginBlock2(project())
   apply_current_loop(true)
   reaper.Undo_EndBlock2(project(), "Loop Composer: apply current loop block", -1)
+end
+
+function M.status()
+  return loop_status()
+end
+
+function M.focus_current_block()
+  if not sws_available() then
+    return false, "SWS extension is not available."
+  end
+
+  local status = loop_status()
+  local left = math.max(0, status.start_time - ((status.end_time - status.start_time) * 0.08))
+  local right = status.end_time + ((status.end_time - status.start_time) * 0.08)
+
+  reaper.BR_SetArrangeView(project(), left, right)
+  reaper.UpdateArrange()
+  return true
 end
 
 return M
