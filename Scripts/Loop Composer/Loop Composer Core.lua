@@ -7,6 +7,7 @@ local DEFAULT_BARS = 8
 local BAR_CHOICES = { 1, 2, 4, 8, 16, 32, 64 }
 local BEAT_CHOICES = { 1, 2 }
 local EDGE_EPSILON = 0.05
+local MIDI_OVERDUB_RECORD_LEAD = 0.12
 local LOOPSTATION_STOP_KEY = "loopstation_stop_requested"
 local LOOPSTATION_QUEUE_KEY = "loopstation_queue_state"
 local LAST_TAKE_GUIDS_KEY = "last_loopstation_take_guids"
@@ -157,6 +158,10 @@ end
 local function time_one_beat_before(time)
   local qn = reaper.TimeMap2_timeToQN(project(), time)
   return reaper.TimeMap2_QNToTime(project(), math.max(0, qn - 1))
+end
+
+local function time_before(time, seconds)
+  return math.max(0, time - seconds)
 end
 
 local function current_bars()
@@ -781,6 +786,7 @@ function M.start_loop_recording()
   local start_time = current_start()
   local use_prerecord = not recording_uses_midi_overdub()
   local transport_start_time = time_one_beat_before(start_time)
+  local record_trigger_time = use_prerecord and transport_start_time or time_before(start_time, MIDI_OVERDUB_RECORD_LEAD)
   local end_time = block_end(start_time, bars)
   local record_context = begin_target_recording_context()
   local initial_guids = snapshot_item_guids()
@@ -823,7 +829,7 @@ function M.start_loop_recording()
     local play_pos = reaper.GetPlayPositionEx(project())
     local reached_end = play_pos >= end_time - 0.02 or play_pos < last_pos - 0.02
 
-    if not recording_started and (play_pos >= start_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON) then
+    if not recording_started and (play_pos >= record_trigger_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON) then
       reaper.Main_OnCommand(1013, 0) -- Transport: Record
       recording_started = true
       last_pos = play_pos
@@ -889,7 +895,8 @@ function M.queue_loopstation_recording(target_track)
 
   local use_prerecord = not recording_uses_midi_overdub(target_tracks)
   local record_start_time = use_prerecord and time_one_beat_before(start_time) or start_time
-  local loop_record_start_time = use_prerecord and time_one_beat_before(end_time) or start_time
+  local first_record_start_time = use_prerecord and record_start_time or time_before(start_time, MIDI_OVERDUB_RECORD_LEAD)
+  local loop_record_start_time = use_prerecord and time_one_beat_before(end_time) or time_before(end_time, MIDI_OVERDUB_RECORD_LEAD)
   local transport_start_time = use_prerecord and record_start_time or time_one_beat_before(start_time)
 
   clear_ext(LOOPSTATION_STOP_KEY)
@@ -964,7 +971,10 @@ function M.queue_loopstation_recording(target_track)
     if use_prerecord then
       return play_pos >= loop_record_start_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON
     end
-    return at_loop_start(play_pos)
+    if last_pos < start_time then
+      return play_pos >= first_record_start_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON
+    end
+    return play_pos >= loop_record_start_time - EDGE_EPSILON or play_pos < last_pos - EDGE_EPSILON
   end
 
   local function watch()
