@@ -6,7 +6,7 @@
         <description><![CDATA[Removes incoming MIDI Pitch Bend messages and passes all other MIDI through unchanged.]]></description>
       </metadata>
       <version name="1.0.0" author="KRGSH" time="2026-05-28T00:00:00Z">
-        <source>https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/MIDI/MIDI%20Pitch%20Bend%20Remover%20-%20Pitch%20Bend%20Only.jsfx</source>
+        <source>https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/MIDI/MIDI%20Pitch%20Bend%20Remover%20-%20Pitch%20Bend%20Only.jsfx</source>
       </version>
     </reapack>
     <reapack name="MIDI Scale Helper.jsfx" type="effect">
@@ -14,7 +14,7 @@
         <description><![CDATA[Maps incoming MIDI notes to a selected scale. White keys play the selected scale as if every key were C major. Black keys are quantized to the nearest scale tone.]]></description>
       </metadata>
       <version name="1.0.0" author="KRGSH" time="2026-05-28T00:00:00Z">
-        <source>https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/MIDI/MIDI%20Scale%20Helper.jsfx</source>
+        <source>https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/MIDI/MIDI%20Scale%20Helper.jsfx</source>
       </version>
     </reapack>
     <reapack name="MIDI Sustain Helper.jsfx" type="effect">
@@ -24,7 +24,7 @@ Releases CC64 briefly on new chord gestures or likely dissonant additions.
 Fixed JSFX memory layout corruption.]]></description>
       </metadata>
       <version name="2.0.1" author="KRGSH" time="2026-05-28T00:00:00Z">
-        <source>https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/MIDI/MIDI%20Sustain%20Helper.jsfx</source>
+        <source>https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/MIDI/MIDI%20Sustain%20Helper.jsfx</source>
       </version>
     </reapack>
   </category>
@@ -33,24 +33,24 @@ Fixed JSFX memory layout corruption.]]></description>
       <metadata>
         <description><![CDATA[ReaScript action set for fixed-length loop-block recording, overdubbing, progression, and navigation.]]></description>
       </metadata>
-      <version name="1.0.0" author="KRGSH" time="2026-05-28T00:00:00Z">
-        <source file="Loop Composer Core.lua">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20Core.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%204%20bars.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%208%20bars.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%2016%20bars.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%2032%20bars.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%2064%20bars.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Start%20loop%20recording.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Start%20loopstation%20mode.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Queue%20loopstation%20recording.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Stop%20loopstation%20recording.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Replace%20and%20queue%20loopstation%20recording.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Open%20view.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20current%20loop%20block%20from%20edit%20cursor.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Go%20to%20previous%20loop%20block.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Go%20to%20next%20loop%20block.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Create%20next%20loop%20block%20from%20current.lua</source>
-        <source main="main">https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Install%20standard%20toolbar.lua</source>
+      <version name="1.1.0" author="KRGSH" time="2026-05-28T00:00:00Z">
+        <source file="Loop Composer Core.lua">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20Core.lua</source>
+        <source file="Loop Composer - Set length to 4 bars.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%204%20bars.lua</source>
+        <source file="Loop Composer - Set length to 8 bars.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%208%20bars.lua</source>
+        <source file="Loop Composer - Set length to 16 bars.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%2016%20bars.lua</source>
+        <source file="Loop Composer - Set length to 32 bars.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%2032%20bars.lua</source>
+        <source file="Loop Composer - Set length to 64 bars.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20length%20to%2064%20bars.lua</source>
+        <source file="Loop Composer - Start loop recording.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Start%20loop%20recording.lua</source>
+        <source file="Loop Composer - Start loopstation mode.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Start%20loopstation%20mode.lua</source>
+        <source file="Loop Composer - Queue loopstation recording.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Queue%20loopstation%20recording.lua</source>
+        <source file="Loop Composer - Stop loopstation recording.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Stop%20loopstation%20recording.lua</source>
+        <source file="Loop Composer - Replace and queue loopstation recording.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Replace%20and%20queue%20loopstation%20recording.lua</source>
+        <source file="Loop Composer - Open view.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Open%20view.lua</source>
+        <source file="Loop Composer - Set current loop block from edit cursor.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Set%20current%20loop%20block%20from%20edit%20cursor.lua</source>
+        <source file="Loop Composer - Go to previous loop block.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Go%20to%20previous%20loop%20block.lua</source>
+        <source file="Loop Composer - Go to next loop block.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Go%20to%20next%20loop%20block.lua</source>
+        <source file="Loop Composer - Create next loop block from current.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Create%20next%20loop%20block%20from%20current.lua</source>
+        <source file="Loop Composer - Install standard toolbar.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Loop%20Composer/Loop%20Composer%20-%20Install%20standard%20toolbar.lua</source>
       </version>
     </reapack>
   </category>
@@ -58,6 +58,6 @@ Fixed JSFX memory layout corruption.]]></description>
     <description><![CDATA[{\rtf1\ansi
 KRGSH REAPER FX contains small JSFX MIDI utilities and workflow scripts for REAPER: pitch-bend removal, scale mapping, sustain-pedal assistance, and loop-block composition.
 }]]></description>
-    <link name="GitHub repository" href="https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch">GitHub repository</link>
+    <link name="GitHub repository" href="https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts">GitHub repository</link>
   </metadata>
 </index>
