@@ -80,10 +80,11 @@ active block is represented by REAPER's loop points and time selection.
 `Start loop recording` records into the current block, stops automatically at
 the selected maximum length, and normalizes early recordings to the largest
 fitting musical length (`1` or `2` beats, then `1`, `2`, `4`, `8`, `16`, `32`,
-or `64` bars). Recording starts one beat early and the preroll is trimmed at
-the block start before new MIDI and audio items are glued to that length and
-source-looped to fill the block. Existing items are left alone, so overdubs
-remain editable as separate items or lanes.
+or `64` bars). Normal recording starts one beat early and the preroll is trimmed
+at the block start before new MIDI and audio items are glued to that length and
+source-looped to fill the block. MIDI record-dub starts at the block start so it
+can overdub into the active MIDI clip. Existing items are left alone, so
+overdubs remain editable as separate items or lanes.
 
 `Start loopstation mode` keeps the current block looping in playback. While it
 runs, `Queue loopstation recording` arms the next pass: recording starts only
@@ -112,12 +113,13 @@ and trigger the same action as clicking the control. The context menu is also
 used for track slots, so individual target track loopstation buttons can be
 triggered from MIDI.
 
-The view can store target tracks from the current REAPER track selection. When
-target tracks are configured, Loop Composer arms and selects those tracks for
-recording, then restores the previous track selection and arm states after the
-pass. `Dub` enables MIDI record-dub mode for those target tracks by setting
-their REAPER record mode to `Record: MIDI overdub`; audio recording remains in
-normal item recording and is not moved into takes or fixed lanes.
+The view can store target tracks from the current REAPER track selection without
+changing track arm state. When target tracks are used for recording, Loop
+Composer arms and selects the active recording targets, then restores the
+previous track selection and arm states after the pass. `Dub` enables MIDI
+record-dub mode for those target tracks by setting their REAPER record mode to
+`Record: MIDI overdub`; audio recording remains in normal item recording and is
+not moved into takes or fixed lanes.
 
 Target tracks are shown as two-column loopstation buttons. Clicking or
 MIDI-triggering a target track selects and arms only that track, then queues a
