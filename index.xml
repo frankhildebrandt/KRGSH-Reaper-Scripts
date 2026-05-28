@@ -58,6 +58,6 @@ Fixed JSFX memory layout corruption.]]></description>
     <description><![CDATA[{\rtf1\ansi
 KRGSH REAPER FX contains small JSFX MIDI utilities and workflow scripts for REAPER: pitch-bend removal, scale mapping, sustain-pedal assistance, and loop-block composition.
 }]]></description>
-    <link name="GitHub repository" href="https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts">GitHub repository</link>
+    <link name="GitHub repository" href="https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch">GitHub repository</link>
   </metadata>
 </index>
