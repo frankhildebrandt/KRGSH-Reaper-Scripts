@@ -634,17 +634,24 @@ local function normalize_new_items(initial_guids, start_time, end_time, stopped_
   reaper.PreventUIRefresh(1)
   for _, item in ipairs(trim_candidates) do
     if reaper.ValidatePtr2(project(), item, "MediaItem*") then
-      local take = midi_take_for_item(item)
-      local lead_ppq = (take and leading_silence_ppq(take, start_time)) or 0
       local trimmed = trim_item_to_start(item, start_time)
+      local lead_ppq = 0
+      if trimmed and reaper.ValidatePtr2(project(), trimmed, "MediaItem*") then
+        local trimmed_take = midi_take_for_item(trimmed)
+        lead_ppq = (trimmed_take and leading_silence_ppq(trimmed_take, start_time)) or 0
+      end
       local glued = nil
       if trimmed and reaper.ValidatePtr2(project(), trimmed, "MediaItem*") then
         glued = glue_item_to_exact_length(trimmed, start_time, source_end)
       end
       if glued and reaper.ValidatePtr2(project(), glued, "MediaItem*") then
         local glued_take = midi_take_for_item(glued)
-        if glued_take and lead_ppq > 0 then
-          shift_midi_take_events(glued_take, lead_ppq)
+        if glued_take then
+          local lead_after = leading_silence_ppq(glued_take, start_time)
+          local shift_ppq = lead_ppq - lead_after
+          if shift_ppq > 0 then
+            shift_midi_take_events(glued_take, shift_ppq)
+          end
         end
         local item_start = reaper.GetMediaItemInfo_Value(glued, "D_POSITION")
         local full_len = math.max(0.001, end_time - item_start)

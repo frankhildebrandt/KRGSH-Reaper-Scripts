@@ -1,5 +1,5 @@
 -- @description Loop Composer - Stop loopstation recording
--- @version 1.4.11
+-- @version 1.4.12
 -- @author KRGSH
 -- @noindex
 -- @provides
