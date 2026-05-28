@@ -114,9 +114,9 @@ used for track slots, so individual target tracks can be selected from MIDI.
 The view can store target tracks from the current REAPER track selection. When
 target tracks are configured, Loop Composer arms and selects those tracks for
 recording, then restores the previous track selection and arm states after the
-pass. Overdub mode can be switched between `Lane` and `Take`; `Lane` is the
-default and uses REAPER fixed lanes when the available REAPER API supports
-them, otherwise recording falls back to the existing item-based behavior.
+pass. `Dub` enables MIDI record-dub mode for those target tracks by setting
+their REAPER record mode to `Record: MIDI overdub`; audio recording remains in
+normal item recording and is not moved into takes or fixed lanes.
 
 `Install standard toolbar` creates `Loop Composer Toolbar.ReaperMenu` in the
 REAPER resource path, installs the included toolbar icons, and tells you where

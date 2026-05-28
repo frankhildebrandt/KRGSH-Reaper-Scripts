@@ -1,5 +1,5 @@
 -- @description Loop Composer - Open view
--- @version 1.3.0
+-- @version 1.3.1
 -- @author KRGSH
 -- @noindex
 -- @provides
@@ -197,6 +197,11 @@ local function button(id, label, icon, x, y, w, h, action, options)
   local base = options.style or colors.panel_alt
   local fill = active and (options.active_color or colors.accent_dark) or base
 
+  if options.pulse then
+    local pulse = 0.10 + ((math.sin(reaper.time_precise() * 7) + 1) * 0.10)
+    fill = flash_color(fill, pulse)
+  end
+
   if is_hot then
     fill = flash_color(fill, 0.05)
   end
@@ -280,10 +285,16 @@ local function draw_animation(status, x, y, w)
     circle(x + 24, y + 23, 7, colors.record, true)
     text(x + 44, y + 15, "Recording pass", colors.text)
   elseif status.is_playing then
-    local sweep = (t * 80) % (w - 38)
-    rect(x + 18, y + 21, w - 36, 4, colors.bg, true)
-    rect(x + 18, y + 21, sweep, 4, colors.accent, true)
+    local bar_x = x + 18
+    local bar_y = y + 24
+    local bar_w = w - 36
+    local playhead_x = bar_x + (bar_w * status.progress)
+    local glow = 0.10 + ((math.sin(t * 8) + 1) * 0.08)
+
     text(x + 18, y + 8, "Playing block", colors.text)
+    rect(bar_x, bar_y, bar_w, 5, colors.bg, true)
+    rect(bar_x, bar_y, math.max(2, bar_w * status.progress), 5, colors.accent, true)
+    line(playhead_x, bar_y - 5, playhead_x, bar_y + 10, flash_color(colors.accent, glow))
   else
     text(x + 18, y + 15, "Ready", colors.muted)
   end
@@ -373,7 +384,12 @@ local function draw_loopstation(status, y)
   button("loopstation_queue", "Queue", "queue", PADDING + 110, by, 102, BUTTON_H, function()
     core.queue_loopstation_recording()
     return "Recording queued"
-  end, { style = colors.record })
+  end, {
+    active = status.loopstation_queued,
+    style = colors.record,
+    active_color = colors.record,
+    pulse = status.loopstation_queued,
+  })
   button("loopstation_stop", "Stop Rec", "stop", PADDING + 220, by, 102, BUTTON_H, function()
     core.stop_loopstation_recording()
     return "Recording stop requested"
@@ -410,10 +426,10 @@ local function draw_block_tools(status, y)
     core.create_next_block()
     return "Next block created"
   end)
-  button("overdub_mode", status.overdub_mode == "lane" and "Lane" or "Take", nil, PADDING + 476, by, 56, BUTTON_H, function()
-    local mode = core.toggle_overdub_mode()
-    return "Overdub mode: " .. mode
-  end, { active = status.overdub_mode == "lane", active_color = colors.accent_dark })
+  button("recorddub_mode", "Dub", nil, PADDING + 476, by, 56, BUTTON_H, function()
+    local enabled = core.toggle_recorddub()
+    return enabled and "MIDI record dub enabled" or "MIDI record dub disabled"
+  end, { active = status.recorddub_enabled, active_color = colors.accent_dark })
 end
 
 local function draw_tracks(status, y)
@@ -429,8 +445,8 @@ local function draw_tracks(status, y)
     return "Target tracks cleared"
   end)
 
-  local mode = status.overdub_mode == "lane" and "Lane overdub" or "Take overdub"
-  local mode_color = status.overdub_mode == "lane" and (status.fixed_lanes_supported and colors.ok or colors.warning) or colors.muted
+  local mode = status.recorddub_enabled and "MIDI record dub" or "Normal record"
+  local mode_color = status.recorddub_enabled and colors.ok or colors.muted
   text(PADDING + 210, by + 10, mode, mode_color)
 
   local tracks = core.target_tracks()

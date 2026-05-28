@@ -8,13 +8,14 @@ local BAR_CHOICES = { 1, 2, 4, 8, 16, 32, 64 }
 local BEAT_CHOICES = { 1, 2 }
 local EDGE_EPSILON = 0.05
 local LOOPSTATION_STOP_KEY = "loopstation_stop_requested"
+local LOOPSTATION_QUEUE_KEY = "loopstation_queue_state"
 local LAST_TAKE_GUIDS_KEY = "last_loopstation_take_guids"
 local REPLACE_AND_QUEUE_KEY = "replace_and_queue_requested"
 local DOCK_STATE_KEY = "view_dock_state"
-local OVERDUB_MODE_KEY = "overdub_mode"
+local RECORD_DUB_KEY = "recorddub_enabled"
 local TARGET_TRACKS_KEY = "target_tracks"
 local MIDI_MAP_PREFIX = "midi_map_"
-local DEFAULT_OVERDUB_MODE = "lane"
+local MIDI_OVERDUB_RECMODE = 7
 
 local function project()
   return 0
@@ -83,6 +84,10 @@ end
 
 local function loopstation_stop_requested()
   return get_ext(LOOPSTATION_STOP_KEY, "") == "1"
+end
+
+local function loopstation_queue_state()
+  return get_ext(LOOPSTATION_QUEUE_KEY, "")
 end
 
 local function replace_and_queue_requested()
@@ -285,7 +290,7 @@ local function glue_item_to_exact_length(item, start_time, source_end)
   return glued or item
 end
 
-local function normalize_new_items(initial_guids, start_time, end_time, stopped_at, discard_preroll_tail_from, lane_targets)
+local function normalize_new_items(initial_guids, start_time, end_time, stopped_at, discard_preroll_tail_from)
   local new_items = collect_new_items(initial_guids, start_time, end_time)
   if #new_items == 0 then
     return {}
@@ -329,11 +334,6 @@ local function normalize_new_items(initial_guids, start_time, end_time, stopped_
       if glued and reaper.ValidatePtr2(project(), glued, "MediaItem*") then
         local item_start = reaper.GetMediaItemInfo_Value(glued, "D_POSITION")
         local full_len = math.max(0.001, end_time - item_start)
-        local track = reaper.GetMediaItem_Track(glued)
-        local lane = lane_targets and lane_targets[tostring(track)]
-        if lane then
-          pcall(reaper.SetMediaItemInfo_Value, glued, "I_FIXEDLANE", lane)
-        end
         reaper.SetMediaItemInfo_Value(glued, "B_LOOPSRC", 1)
         reaper.SetMediaItemInfo_Value(glued, "D_LENGTH", full_len)
         reaper.SetMediaItemSelected(glued, true)
@@ -416,44 +416,8 @@ local function format_position(time)
   return reaper.format_timestr_pos(time, "", 2)
 end
 
-local function get_overdub_mode()
-  local mode = get_ext(OVERDUB_MODE_KEY, DEFAULT_OVERDUB_MODE)
-  if mode ~= "take" and mode ~= "lane" then
-    mode = DEFAULT_OVERDUB_MODE
-  end
-  return mode
-end
-
-local function fixed_lanes_supported()
-  if not reaper.SetMediaTrackInfo_Value or not reaper.GetMediaTrackInfo_Value then
-    return false
-  end
-  local version = reaper.GetAppVersion and reaper.GetAppVersion() or ""
-  local major = tonumber(version:match("^(%d+)")) or 0
-  if major < 7 then
-    return false
-  end
-  local track = reaper.GetTrack(project(), 0)
-  if not track then
-    return false
-  end
-  return pcall(reaper.GetMediaTrackInfo_Value, track, "I_NUMFIXEDLANES")
-end
-
-local function prepare_track_lane(track)
-  if not fixed_lanes_supported() then
-    return nil
-  end
-
-  local ok, lane_count = pcall(reaper.GetMediaTrackInfo_Value, track, "I_NUMFIXEDLANES")
-  if not ok then
-    return nil
-  end
-
-  lane_count = math.max(0, math.floor(tonumber(lane_count) or 0))
-  pcall(reaper.SetMediaTrackInfo_Value, track, "I_FREEMODE", 2)
-  pcall(reaper.SetMediaTrackInfo_Value, track, "I_NUMFIXEDLANES", lane_count + 1)
-  return lane_count
+local function recorddub_enabled()
+  return get_ext(RECORD_DUB_KEY, "0") == "1"
 end
 
 local function decode_target_tracks()
@@ -493,10 +457,37 @@ local function active_target_tracks()
   return tracks
 end
 
+local function recorddub_tracks()
+  local tracks = active_target_tracks()
+  if #tracks > 0 then
+    return tracks
+  end
+
+  local selected = {}
+  local count = reaper.CountSelectedTracks(project())
+  for i = 0, count - 1 do
+    selected[#selected + 1] = reaper.GetSelectedTrack(project(), i)
+  end
+  return selected
+end
+
+local function apply_recorddub_to_tracks()
+  if not recorddub_enabled() then
+    return
+  end
+
+  for _, track in ipairs(recorddub_tracks()) do
+    if reaper.ValidatePtr2(project(), track, "MediaTrack*") then
+      reaper.SetMediaTrackInfo_Value(track, "I_RECMODE", MIDI_OVERDUB_RECMODE)
+    end
+  end
+end
+
 local function begin_target_recording_context()
   local targets = active_target_tracks()
   if #targets == 0 then
-    return { lane_targets = nil, restore = function() end }
+    apply_recorddub_to_tracks()
+    return { restore = function() end }
   end
 
   local track_count = reaper.CountTracks(project())
@@ -507,30 +498,28 @@ local function begin_target_recording_context()
       track = track,
       selected = reaper.IsTrackSelected(track),
       recarm = reaper.GetMediaTrackInfo_Value(track, "I_RECARM"),
+      recmode = reaper.GetMediaTrackInfo_Value(track, "I_RECMODE"),
     }
     reaper.SetTrackSelected(track, false)
   end
 
-  local lane_targets = {}
-  local use_lanes = get_overdub_mode() == "lane"
   for _, track in ipairs(targets) do
     reaper.SetTrackSelected(track, true)
     reaper.SetMediaTrackInfo_Value(track, "I_RECARM", 1)
-    if use_lanes then
-      local lane = prepare_track_lane(track)
-      if lane then
-        lane_targets[tostring(track)] = lane
-      end
+    if recorddub_enabled() then
+      reaper.SetMediaTrackInfo_Value(track, "I_RECMODE", MIDI_OVERDUB_RECMODE)
     end
   end
 
   return {
-    lane_targets = lane_targets,
     restore = function()
       for _, state in ipairs(states) do
         if reaper.ValidatePtr2(project(), state.track, "MediaTrack*") then
           reaper.SetTrackSelected(state.track, state.selected)
           reaper.SetMediaTrackInfo_Value(state.track, "I_RECARM", state.recarm)
+          if not recorddub_enabled() then
+            reaper.SetMediaTrackInfo_Value(state.track, "I_RECMODE", state.recmode)
+          end
         end
       end
       reaper.UpdateArrange()
@@ -652,8 +641,9 @@ local function loop_status()
     repeat_enabled = reaper.GetSetRepeat(-1) == 1,
     sws_available = sws_available(),
     sws_version = sws_version(),
-    overdub_mode = get_overdub_mode(),
-    fixed_lanes_supported = fixed_lanes_supported(),
+    recorddub_enabled = recorddub_enabled(),
+    loopstation_queue_state = loopstation_queue_state(),
+    loopstation_queued = loopstation_queue_state() ~= "",
   }
 end
 
@@ -727,9 +717,7 @@ function M.start_loop_recording()
       initial_guids,
       start_time,
       end_time,
-      stopped_at or reaper.GetCursorPositionEx(project()),
-      nil,
-      record_context.lane_targets
+      stopped_at or reaper.GetCursorPositionEx(project())
     )
     set_loop_range(start_time, end_time, false)
     reaper.Undo_EndBlock2(project(), "Loop Composer: loop recording", -1)
@@ -790,6 +778,7 @@ function M.queue_loopstation_recording()
 
   clear_ext(LOOPSTATION_STOP_KEY)
   clear_ext(REPLACE_AND_QUEUE_KEY)
+  set_ext(LOOPSTATION_QUEUE_KEY, "queued")
   set_loop_range(start_time, end_time, false)
   reaper.GetSetRepeat(1)
 
@@ -798,6 +787,7 @@ function M.queue_loopstation_recording()
     reaper.SetEditCurPos2(project(), prerecord_time, true, false)
     record_context = begin_target_recording_context()
     initial_guids = snapshot_item_guids()
+    set_ext(LOOPSTATION_QUEUE_KEY, "recording")
     recording_started = true
     recording_reached_block_start = true
     reaper.Main_OnCommand(1013, 0) -- Transport: Record
@@ -813,6 +803,7 @@ function M.queue_loopstation_recording()
     end
     finalized = true
     clear_ext(LOOPSTATION_STOP_KEY)
+    clear_ext(LOOPSTATION_QUEUE_KEY)
 
     if initial_guids then
       reaper.Undo_BeginBlock2(project())
@@ -822,8 +813,7 @@ function M.queue_loopstation_recording()
         start_time,
         end_time,
         stopped_at or reaper.GetCursorPositionEx(project()),
-        discard_preroll_tail_from,
-        record_context and record_context.lane_targets or nil
+        discard_preroll_tail_from
       )
       store_last_loopstation_take(items)
       set_loop_range(start_time, end_time, false)
@@ -871,6 +861,7 @@ function M.queue_loopstation_recording()
     if not recording_started and at_loop_prerecord_start(play_pos) then
       record_context = begin_target_recording_context()
       initial_guids = snapshot_item_guids()
+      set_ext(LOOPSTATION_QUEUE_KEY, "recording")
       recording_started = true
       recording_started_from_loop_preroll = true
       reaper.Main_OnCommand(1013, 0) -- Transport: Record
@@ -903,6 +894,7 @@ end
 
 function M.stop_loopstation_recording()
   set_ext(LOOPSTATION_STOP_KEY, "1")
+  clear_ext(LOOPSTATION_QUEUE_KEY)
 
   local state = reaper.GetPlayStateEx(project())
   local is_recording = (state & 4) == 4
@@ -974,17 +966,20 @@ function M.set_dock_state(state)
   set_ext(DOCK_STATE_KEY, tonumber(state) or 0)
 end
 
-function M.toggle_overdub_mode()
-  local next_mode = get_overdub_mode() == "lane" and "take" or "lane"
-  set_ext(OVERDUB_MODE_KEY, next_mode)
-  return next_mode
+function M.toggle_recorddub()
+  local enabled = not recorddub_enabled()
+  set_ext(RECORD_DUB_KEY, enabled and "1" or "0")
+  if enabled then
+    apply_recorddub_to_tracks()
+  end
+  return enabled
 end
 
-function M.set_overdub_mode(mode)
-  if mode ~= "take" and mode ~= "lane" then
-    mode = DEFAULT_OVERDUB_MODE
+function M.set_recorddub(enabled)
+  set_ext(RECORD_DUB_KEY, enabled and "1" or "0")
+  if enabled then
+    apply_recorddub_to_tracks()
   end
-  set_ext(OVERDUB_MODE_KEY, mode)
 end
 
 function M.target_tracks()
