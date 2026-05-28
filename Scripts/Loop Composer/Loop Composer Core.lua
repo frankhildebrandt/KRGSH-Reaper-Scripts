@@ -10,6 +10,11 @@ local EDGE_EPSILON = 0.05
 local LOOPSTATION_STOP_KEY = "loopstation_stop_requested"
 local LAST_TAKE_GUIDS_KEY = "last_loopstation_take_guids"
 local REPLACE_AND_QUEUE_KEY = "replace_and_queue_requested"
+local DOCK_STATE_KEY = "view_dock_state"
+local OVERDUB_MODE_KEY = "overdub_mode"
+local TARGET_TRACKS_KEY = "target_tracks"
+local MIDI_MAP_PREFIX = "midi_map_"
+local DEFAULT_OVERDUB_MODE = "lane"
 
 local function project()
   return 0
@@ -29,6 +34,51 @@ end
 
 local function clear_ext(key)
   reaper.SetProjExtState(project(), SECTION, key, "")
+end
+
+local function split_lines(value)
+  local lines = {}
+  for line in tostring(value or ""):gmatch("[^\n]+") do
+    lines[#lines + 1] = line
+  end
+  return lines
+end
+
+local function track_guid(track)
+  if not track or not reaper.ValidatePtr2(project(), track, "MediaTrack*") then
+    return ""
+  end
+  if reaper.GetTrackGUID then
+    return reaper.GetTrackGUID(track)
+  end
+  local ok, guid = reaper.GetSetMediaTrackInfo_String(track, "GUID", "", false)
+  if ok then
+    return guid
+  end
+  return ""
+end
+
+local function track_by_guid(guid)
+  local count = reaper.CountTracks(project())
+  for i = 0, count - 1 do
+    local track = reaper.GetTrack(project(), i)
+    if track_guid(track) == guid then
+      return track
+    end
+  end
+  return nil
+end
+
+local function track_name(track)
+  if not track or not reaper.ValidatePtr2(project(), track, "MediaTrack*") then
+    return "Missing track"
+  end
+  local _, name = reaper.GetTrackName(track, "")
+  if name == "" then
+    local index = math.floor(reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") or 0)
+    name = "Track " .. tostring(index)
+  end
+  return name
 end
 
 local function loopstation_stop_requested()
@@ -235,7 +285,7 @@ local function glue_item_to_exact_length(item, start_time, source_end)
   return glued or item
 end
 
-local function normalize_new_items(initial_guids, start_time, end_time, stopped_at, discard_preroll_tail_from)
+local function normalize_new_items(initial_guids, start_time, end_time, stopped_at, discard_preroll_tail_from, lane_targets)
   local new_items = collect_new_items(initial_guids, start_time, end_time)
   if #new_items == 0 then
     return {}
@@ -279,6 +329,11 @@ local function normalize_new_items(initial_guids, start_time, end_time, stopped_
       if glued and reaper.ValidatePtr2(project(), glued, "MediaItem*") then
         local item_start = reaper.GetMediaItemInfo_Value(glued, "D_POSITION")
         local full_len = math.max(0.001, end_time - item_start)
+        local track = reaper.GetMediaItem_Track(glued)
+        local lane = lane_targets and lane_targets[tostring(track)]
+        if lane then
+          pcall(reaper.SetMediaItemInfo_Value, glued, "I_FIXEDLANE", lane)
+        end
         reaper.SetMediaItemInfo_Value(glued, "B_LOOPSRC", 1)
         reaper.SetMediaItemInfo_Value(glued, "D_LENGTH", full_len)
         reaper.SetMediaItemSelected(glued, true)
@@ -361,6 +416,207 @@ local function format_position(time)
   return reaper.format_timestr_pos(time, "", 2)
 end
 
+local function get_overdub_mode()
+  local mode = get_ext(OVERDUB_MODE_KEY, DEFAULT_OVERDUB_MODE)
+  if mode ~= "take" and mode ~= "lane" then
+    mode = DEFAULT_OVERDUB_MODE
+  end
+  return mode
+end
+
+local function fixed_lanes_supported()
+  if not reaper.SetMediaTrackInfo_Value or not reaper.GetMediaTrackInfo_Value then
+    return false
+  end
+  local version = reaper.GetAppVersion and reaper.GetAppVersion() or ""
+  local major = tonumber(version:match("^(%d+)")) or 0
+  if major < 7 then
+    return false
+  end
+  local track = reaper.GetTrack(project(), 0)
+  if not track then
+    return false
+  end
+  return pcall(reaper.GetMediaTrackInfo_Value, track, "I_NUMFIXEDLANES")
+end
+
+local function prepare_track_lane(track)
+  if not fixed_lanes_supported() then
+    return nil
+  end
+
+  local ok, lane_count = pcall(reaper.GetMediaTrackInfo_Value, track, "I_NUMFIXEDLANES")
+  if not ok then
+    return nil
+  end
+
+  lane_count = math.max(0, math.floor(tonumber(lane_count) or 0))
+  pcall(reaper.SetMediaTrackInfo_Value, track, "I_FREEMODE", 2)
+  pcall(reaper.SetMediaTrackInfo_Value, track, "I_NUMFIXEDLANES", lane_count + 1)
+  return lane_count
+end
+
+local function decode_target_tracks()
+  local slots = {}
+  for _, line in ipairs(split_lines(get_ext(TARGET_TRACKS_KEY, ""))) do
+    local guid, enabled = line:match("^([^|]+)|([^|]+)$")
+    if guid and guid ~= "" then
+      slots[#slots + 1] = {
+        guid = guid,
+        enabled = enabled ~= "0",
+      }
+    end
+  end
+  return slots
+end
+
+local function encode_target_tracks(slots)
+  local lines = {}
+  for _, slot in ipairs(slots or {}) do
+    if slot.guid and slot.guid ~= "" then
+      lines[#lines + 1] = slot.guid .. "|" .. (slot.enabled and "1" or "0")
+    end
+  end
+  return table.concat(lines, "\n")
+end
+
+local function active_target_tracks()
+  local tracks = {}
+  for _, slot in ipairs(decode_target_tracks()) do
+    if slot.enabled then
+      local track = track_by_guid(slot.guid)
+      if track then
+        tracks[#tracks + 1] = track
+      end
+    end
+  end
+  return tracks
+end
+
+local function begin_target_recording_context()
+  local targets = active_target_tracks()
+  if #targets == 0 then
+    return { lane_targets = nil, restore = function() end }
+  end
+
+  local track_count = reaper.CountTracks(project())
+  local states = {}
+  for i = 0, track_count - 1 do
+    local track = reaper.GetTrack(project(), i)
+    states[#states + 1] = {
+      track = track,
+      selected = reaper.IsTrackSelected(track),
+      recarm = reaper.GetMediaTrackInfo_Value(track, "I_RECARM"),
+    }
+    reaper.SetTrackSelected(track, false)
+  end
+
+  local lane_targets = {}
+  local use_lanes = get_overdub_mode() == "lane"
+  for _, track in ipairs(targets) do
+    reaper.SetTrackSelected(track, true)
+    reaper.SetMediaTrackInfo_Value(track, "I_RECARM", 1)
+    if use_lanes then
+      local lane = prepare_track_lane(track)
+      if lane then
+        lane_targets[tostring(track)] = lane
+      end
+    end
+  end
+
+  return {
+    lane_targets = lane_targets,
+    restore = function()
+      for _, state in ipairs(states) do
+        if reaper.ValidatePtr2(project(), state.track, "MediaTrack*") then
+          reaper.SetTrackSelected(state.track, state.selected)
+          reaper.SetMediaTrackInfo_Value(state.track, "I_RECARM", state.recarm)
+        end
+      end
+      reaper.UpdateArrange()
+    end,
+  }
+end
+
+local function midi_mapping_key(control_id)
+  return MIDI_MAP_PREFIX .. tostring(control_id or "")
+end
+
+local function parse_midi_mapping(value)
+  local event_type, channel, number = tostring(value or ""):match("^([^:]+):(%d+):(%d+)$")
+  if not event_type then
+    return nil
+  end
+  return {
+    type = event_type,
+    channel = tonumber(channel),
+    number = tonumber(number),
+  }
+end
+
+local function encode_midi_mapping(event)
+  if not event then
+    return ""
+  end
+  return table.concat({ event.type, event.channel, event.number }, ":")
+end
+
+local function midi_event_label(event)
+  if not event then
+    return ""
+  end
+  local kind = event.type == "cc" and "CC" or "Note"
+  return kind .. " " .. tostring(event.number) .. " ch " .. tostring((event.channel or 0) + 1)
+end
+
+local function recent_midi_event()
+  if not reaper.MIDI_GetRecentInputEvent then
+    return nil
+  end
+
+  local ok, retval, msg, timestamp, device, project_pos, project_loop_count = pcall(reaper.MIDI_GetRecentInputEvent, 0)
+  if not ok or not retval or retval == 0 or not msg or #msg < 2 then
+    return nil
+  end
+
+  local status = msg:byte(1)
+  local data1 = msg:byte(2) or 0
+  local data2 = msg:byte(3) or 0
+  local message_type = status & 0xF0
+  local channel = status & 0x0F
+  local event = nil
+
+  if message_type == 0xB0 then
+    event = { type = "cc", channel = channel, number = data1, value = data2 }
+  elseif message_type == 0x90 and data2 > 0 then
+    event = { type = "note", channel = channel, number = data1, value = data2 }
+  end
+
+  if not event then
+    return nil
+  end
+
+  event.fingerprint = table.concat({
+    tostring(retval),
+    tostring(timestamp or ""),
+    tostring(device or ""),
+    tostring(project_pos or ""),
+    tostring(project_loop_count or ""),
+    tostring(status),
+    tostring(data1),
+    tostring(data2),
+  }, ":")
+  event.label = midi_event_label(event)
+  return event
+end
+
+local function mapping_matches(mapping, event)
+  return mapping and event and
+    mapping.type == event.type and
+    mapping.channel == event.channel and
+    mapping.number == event.number
+end
+
 local function loop_status()
   local bars = current_bars()
   local start_time = current_start()
@@ -368,20 +624,36 @@ local function loop_status()
   local start_measure = measure_at_time(start_time) + 1
   local end_measure = measure_at_time(end_time)
   local play_state = reaper.GetPlayStateEx(project())
+  local play_pos = reaper.GetPlayPositionEx(project())
+  local progress = 0
+  if end_time > start_time then
+    progress = (play_pos - start_time) / (end_time - start_time)
+    if progress < 0 then
+      progress = 0
+    elseif progress > 1 then
+      progress = 1
+    end
+  end
 
   return {
     bars = bars,
     start_time = start_time,
     end_time = end_time,
+    play_position = play_pos,
+    play_position_text = format_position(play_pos),
+    progress = progress,
     start_position = format_position(start_time),
     end_position = format_position(end_time),
     start_measure = start_measure,
     end_measure = end_measure,
     is_playing = (play_state & 1) == 1,
+    is_paused = (play_state & 2) == 2,
     is_recording = (play_state & 4) == 4,
     repeat_enabled = reaper.GetSetRepeat(-1) == 1,
     sws_available = sws_available(),
     sws_version = sws_version(),
+    overdub_mode = get_overdub_mode(),
+    fixed_lanes_supported = fixed_lanes_supported(),
   }
 end
 
@@ -434,6 +706,7 @@ function M.start_loop_recording()
   local start_time = current_start()
   local prerecord_time = time_one_beat_before(start_time)
   local end_time = block_end(start_time, bars)
+  local record_context = begin_target_recording_context()
   local initial_guids = snapshot_item_guids()
   local finalized = false
   local last_pos = reaper.GetPlayPositionEx(project())
@@ -450,9 +723,17 @@ function M.start_loop_recording()
     end
     finalized = true
     reaper.Undo_BeginBlock2(project())
-    normalize_new_items(initial_guids, start_time, end_time, stopped_at or reaper.GetCursorPositionEx(project()))
+    normalize_new_items(
+      initial_guids,
+      start_time,
+      end_time,
+      stopped_at or reaper.GetCursorPositionEx(project()),
+      nil,
+      record_context.lane_targets
+    )
     set_loop_range(start_time, end_time, false)
     reaper.Undo_EndBlock2(project(), "Loop Composer: loop recording", -1)
+    record_context.restore()
   end
 
   local function watch()
@@ -500,6 +781,7 @@ function M.queue_loopstation_recording()
   local end_time = block_end(start_time, bars)
   local loop_prerecord_time = time_one_beat_before(end_time)
   local initial_guids = nil
+  local record_context = nil
   local recording_started = false
   local recording_started_from_loop_preroll = false
   local recording_reached_block_start = false
@@ -514,6 +796,7 @@ function M.queue_loopstation_recording()
   local state = reaper.GetPlayStateEx(project())
   if (state & 1) ~= 1 then
     reaper.SetEditCurPos2(project(), prerecord_time, true, false)
+    record_context = begin_target_recording_context()
     initial_guids = snapshot_item_guids()
     recording_started = true
     recording_reached_block_start = true
@@ -539,11 +822,16 @@ function M.queue_loopstation_recording()
         start_time,
         end_time,
         stopped_at or reaper.GetCursorPositionEx(project()),
-        discard_preroll_tail_from
+        discard_preroll_tail_from,
+        record_context and record_context.lane_targets or nil
       )
       store_last_loopstation_take(items)
       set_loop_range(start_time, end_time, false)
       reaper.Undo_EndBlock2(project(), "Loop Composer: loopstation recording", -1)
+    end
+
+    if record_context then
+      record_context.restore()
     end
 
     if replace_and_queue_requested() then
@@ -581,6 +869,7 @@ function M.queue_loopstation_recording()
     end
 
     if not recording_started and at_loop_prerecord_start(play_pos) then
+      record_context = begin_target_recording_context()
       initial_guids = snapshot_item_guids()
       recording_started = true
       recording_started_from_loop_preroll = true
@@ -647,6 +936,149 @@ function M.apply_current_loop()
   reaper.Undo_BeginBlock2(project())
   apply_current_loop(true)
   reaper.Undo_EndBlock2(project(), "Loop Composer: apply current loop block", -1)
+end
+
+function M.play()
+  reaper.Main_OnCommand(1007, 0) -- Transport: Play
+end
+
+function M.stop()
+  reaper.Main_OnCommand(1016, 0) -- Transport: Stop
+end
+
+function M.pause()
+  reaper.Main_OnCommand(1008, 0) -- Transport: Pause
+end
+
+function M.record()
+  reaper.Main_OnCommand(1013, 0) -- Transport: Record
+end
+
+function M.toggle_repeat()
+  reaper.GetSetRepeat(reaper.GetSetRepeat(-1) == 1 and 0 or 1)
+end
+
+function M.jump_block_start()
+  reaper.SetEditCurPos2(project(), current_start(), true, false)
+end
+
+function M.jump_block_end()
+  reaper.SetEditCurPos2(project(), block_end(current_start(), current_bars()), true, false)
+end
+
+function M.dock_state()
+  return tonumber(get_ext(DOCK_STATE_KEY, "0")) or 0
+end
+
+function M.set_dock_state(state)
+  set_ext(DOCK_STATE_KEY, tonumber(state) or 0)
+end
+
+function M.toggle_overdub_mode()
+  local next_mode = get_overdub_mode() == "lane" and "take" or "lane"
+  set_ext(OVERDUB_MODE_KEY, next_mode)
+  return next_mode
+end
+
+function M.set_overdub_mode(mode)
+  if mode ~= "take" and mode ~= "lane" then
+    mode = DEFAULT_OVERDUB_MODE
+  end
+  set_ext(OVERDUB_MODE_KEY, mode)
+end
+
+function M.target_tracks()
+  local tracks = {}
+  for index, slot in ipairs(decode_target_tracks()) do
+    local track = track_by_guid(slot.guid)
+    tracks[#tracks + 1] = {
+      index = index,
+      guid = slot.guid,
+      exists = track ~= nil,
+      enabled = slot.enabled,
+      name = track_name(track),
+      track_number = track and math.floor(reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") or 0) or 0,
+    }
+  end
+  return tracks
+end
+
+function M.set_target_tracks_from_selection()
+  local slots = {}
+  local count = reaper.CountSelectedTracks(project())
+  for i = 0, count - 1 do
+    local track = reaper.GetSelectedTrack(project(), i)
+    local guid = track_guid(track)
+    if guid ~= "" then
+      slots[#slots + 1] = { guid = guid, enabled = true }
+    end
+  end
+  set_ext(TARGET_TRACKS_KEY, encode_target_tracks(slots))
+  return #slots
+end
+
+function M.clear_target_tracks()
+  clear_ext(TARGET_TRACKS_KEY)
+end
+
+function M.toggle_target_track(index)
+  local slots = decode_target_tracks()
+  local slot = slots[index]
+  if slot then
+    slot.enabled = not slot.enabled
+    set_ext(TARGET_TRACKS_KEY, encode_target_tracks(slots))
+  end
+end
+
+function M.select_target_track(index)
+  local slots = decode_target_tracks()
+  local slot = slots[index]
+  if not slot then
+    return false
+  end
+
+  local track = track_by_guid(slot.guid)
+  if not track then
+    return false
+  end
+
+  local count = reaper.CountTracks(project())
+  for i = 0, count - 1 do
+    reaper.SetTrackSelected(reaper.GetTrack(project(), i), false)
+  end
+  reaper.SetTrackSelected(track, true)
+  reaper.SetOnlyTrackSelected(track)
+  reaper.UpdateArrange()
+  return true
+end
+
+function M.recent_midi_event()
+  return recent_midi_event()
+end
+
+function M.get_midi_mapping(control_id)
+  local mapping = parse_midi_mapping(get_ext(midi_mapping_key(control_id), ""))
+  if mapping then
+    mapping.label = midi_event_label(mapping)
+  end
+  return mapping
+end
+
+function M.set_midi_mapping(control_id, event)
+  set_ext(midi_mapping_key(control_id), encode_midi_mapping(event))
+end
+
+function M.reset_midi_mapping(control_id)
+  clear_ext(midi_mapping_key(control_id))
+end
+
+function M.midi_mapping_label(control_id)
+  local mapping = M.get_midi_mapping(control_id)
+  return mapping and mapping.label or ""
+end
+
+function M.midi_event_matches(control_id, event)
+  return mapping_matches(M.get_midi_mapping(control_id), event)
 end
 
 function M.status()

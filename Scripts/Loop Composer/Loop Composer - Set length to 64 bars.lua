@@ -1,5 +1,5 @@
 -- @description Loop Composer - Set length to 64 bars
--- @version 1.2.1
+-- @version 1.3.0
 -- @author KRGSH
 -- @noindex
 -- @provides

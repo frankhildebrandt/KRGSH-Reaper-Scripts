@@ -100,11 +100,23 @@ current block into the next block, moves the edit cursor there, and updates the
 loop points. `Go to previous loop block` and `Go to next loop block` navigate
 without copying content, including to empty blocks.
 
-`Open view` opens a compact Loop Composer control window. It shows the active
-block length, measures, time range, transport state, and SWS status; it also
-provides buttons for length changes, loopstation recording, navigation, block
-creation, and block recording. When the SWS extension is installed, the `Zoom`
-button uses SWS arrange-view tools to focus the current loop block.
+`Open view` opens a dockable Loop Composer control surface. It remembers its
+dock or floating state per project and provides full loop transport controls:
+play, pause, stop, record, repeat, block start/end jumps, previous/next block,
+block recording, loop application, loopstation controls, block creation, and
+SWS zoom. Playback and recording states are animated in the view.
+
+Right-clicking a map-ready control opens a context menu with `MIDI learn` and
+`Reset MIDI mapping`. Learned MIDI CC or note mappings are stored per project
+and trigger the same action as clicking the control. The context menu is also
+used for track slots, so individual target tracks can be selected from MIDI.
+
+The view can store target tracks from the current REAPER track selection. When
+target tracks are configured, Loop Composer arms and selects those tracks for
+recording, then restores the previous track selection and arm states after the
+pass. Overdub mode can be switched between `Lane` and `Take`; `Lane` is the
+default and uses REAPER fixed lanes when the available REAPER API supports
+them, otherwise recording falls back to the existing item-based behavior.
 
 `Install standard toolbar` creates `Loop Composer Toolbar.ReaperMenu` in the
 REAPER resource path, installs the included toolbar icons, and tells you where
