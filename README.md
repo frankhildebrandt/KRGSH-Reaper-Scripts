@@ -19,7 +19,7 @@ keys are quantized to the nearest note in the selected scale.
 Import this repository in ReaPack:
 
 ```text
-https://github.com/frankhildebrandt/ReaperFX---Remove-Midi-Pitch/raw/main/index.xml
+https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/index.xml
 ```
 
 The ReaPack index is maintained automatically by GitHub Actions whenever changes
