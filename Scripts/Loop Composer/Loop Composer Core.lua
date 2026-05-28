@@ -16,6 +16,7 @@ local RECORD_DUB_KEY = "recorddub_enabled"
 local TARGET_TRACKS_KEY = "target_tracks"
 local MIDI_MAP_PREFIX = "midi_map_"
 local MIDI_OVERDUB_RECMODE = 7
+local recorddub_enabled
 
 local function project()
   return 0
@@ -80,6 +81,15 @@ local function track_name(track)
     name = "Track " .. tostring(index)
   end
   return name
+end
+
+local function arm_track(track)
+  if reaper.ValidatePtr2(project(), track, "MediaTrack*") then
+    reaper.SetMediaTrackInfo_Value(track, "I_RECARM", 1)
+    if recorddub_enabled and recorddub_enabled() then
+      reaper.SetMediaTrackInfo_Value(track, "I_RECMODE", MIDI_OVERDUB_RECMODE)
+    end
+  end
 end
 
 local function loopstation_stop_requested()
@@ -416,7 +426,7 @@ local function format_position(time)
   return reaper.format_timestr_pos(time, "", 2)
 end
 
-local function recorddub_enabled()
+function recorddub_enabled()
   return get_ext(RECORD_DUB_KEY, "0") == "1"
 end
 
@@ -505,10 +515,7 @@ local function begin_target_recording_context()
 
   for _, track in ipairs(targets) do
     reaper.SetTrackSelected(track, true)
-    reaper.SetMediaTrackInfo_Value(track, "I_RECARM", 1)
-    if recorddub_enabled() then
-      reaper.SetMediaTrackInfo_Value(track, "I_RECMODE", MIDI_OVERDUB_RECMODE)
-    end
+    arm_track(track)
   end
 
   return {
@@ -1006,6 +1013,7 @@ function M.set_target_tracks_from_selection()
     local guid = track_guid(track)
     if guid ~= "" then
       slots[#slots + 1] = { guid = guid, enabled = true }
+      arm_track(track)
     end
   end
   set_ext(TARGET_TRACKS_KEY, encode_target_tracks(slots))
@@ -1043,6 +1051,7 @@ function M.select_target_track(index)
   end
   reaper.SetTrackSelected(track, true)
   reaper.SetOnlyTrackSelected(track)
+  arm_track(track)
   reaper.UpdateArrange()
   return true
 end
