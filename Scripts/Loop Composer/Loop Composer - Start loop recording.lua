@@ -1,5 +1,5 @@
 -- @description Loop Composer - Start loop recording
--- @version 1.4.12
+-- @version 1.4.13
 -- @author KRGSH
 -- @noindex
 -- @provides
