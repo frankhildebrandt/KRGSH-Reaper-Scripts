@@ -83,8 +83,9 @@ recordings to the largest fitting musical length (`1` or `2` beats, then `1`,
 `2`, `4`, `8`, `16`, `32`, or `64` bars). New MIDI and audio items are glued to
 that length and source-looped to fill the block. MIDI record-dub starts directly
 at the block start; if the target block does not contain a MIDI clip yet, Loop
-Composer creates an empty one before recording starts. Existing items are left
-alone, so overdubs remain editable as separate items or lanes.
+Composer creates an empty one before recording starts. Notes held before the
+loop starts are inserted as note-on events at the block start. Existing items
+are left alone, so overdubs remain editable as separate items or lanes.
 
 `Start loopstation mode` keeps the current block looping in playback. While it
 runs, `Queue loopstation recording` arms the next pass: recording starts only

@@ -17,6 +17,7 @@ local RECORD_DUB_KEY = "recorddub_enabled"
 local TARGET_TRACKS_KEY = "target_tracks"
 local MIDI_MAP_PREFIX = "midi_map_"
 local MIDI_OVERDUB_RECMODE = 7
+local RECENT_MIDI_EVENT_LIMIT = 512
 local recorddub_enabled
 
 local function project()
@@ -282,36 +283,62 @@ local function collect_new_items(initial_guids, start_time, end_time)
   return items
 end
 
-local function item_has_midi_take(item)
-  local take = reaper.GetActiveTake(item)
-  return take and reaper.TakeIsMIDI(take)
+local function midi_take_for_item(item)
+  local active_take = reaper.GetActiveTake(item)
+  if active_take and reaper.TakeIsMIDI(active_take) then
+    return active_take
+  end
+
+  local take_count = reaper.CountTakes(item)
+  for i = 0, take_count - 1 do
+    local take = reaper.GetMediaItemTake(item, i)
+    if take and reaper.TakeIsMIDI(take) then
+      return take
+    end
+  end
+
+  return nil
 end
 
-local function track_has_midi_item_in_range(track, start_time, end_time)
+local function midi_takes_at_time(track, start_time)
+  local takes = {}
   if not reaper.ValidatePtr2(project(), track, "MediaTrack*") then
-    return false
+    return takes
   end
 
   local count = reaper.CountTrackMediaItems(track)
   for i = 0, count - 1 do
     local item = reaper.GetTrackMediaItem(track, i)
     local item_start, item_end = item_range(item)
-    if item_has_midi_take(item) and overlaps(item_start, item_end, start_time, end_time) then
-      return true
+    if item_start <= start_time + 0.001 and item_end > start_time + 0.001 then
+      local take = midi_take_for_item(item)
+      if take then
+        takes[#takes + 1] = take
+      end
     end
   end
 
-  return false
+  return takes
+end
+
+local function midi_takes_for_overdub(tracks, start_time)
+  local takes = {}
+  for _, track in ipairs(tracks or {}) do
+    local track_takes = midi_takes_at_time(track, start_time)
+    for _, take in ipairs(track_takes) do
+      takes[#takes + 1] = take
+    end
+  end
+  return takes
 end
 
 local function ensure_midi_items_for_overdub(tracks, start_time, end_time)
   if not reaper.CreateNewMIDIItemInProj then
-    return
+    return midi_takes_for_overdub(tracks, start_time)
   end
 
   for _, track in ipairs(tracks or {}) do
-    if reaper.ValidatePtr2(project(), track, "MediaTrack*") and
-        not track_has_midi_item_in_range(track, start_time, end_time) then
+    if reaper.ValidatePtr2(project(), track, "MediaTrack*") and #midi_takes_at_time(track, start_time) == 0 then
       local item = reaper.CreateNewMIDIItemInProj(track, start_time, end_time, false)
       if item and reaper.ValidatePtr2(project(), item, "MediaItem*") then
         reaper.SetMediaItemInfo_Value(item, "B_LOOPSRC", 0)
@@ -320,6 +347,70 @@ local function ensure_midi_items_for_overdub(tracks, start_time, end_time)
     end
   end
   reaper.UpdateArrange()
+  return midi_takes_for_overdub(tracks, start_time)
+end
+
+local function current_held_midi_notes()
+  if not reaper.MIDI_GetRecentInputEvent then
+    return {}
+  end
+
+  pcall(reaper.MIDI_GetRecentInputEvent, 0)
+
+  local resolved = {}
+  local held = {}
+  for i = 0, RECENT_MIDI_EVENT_LIMIT - 1 do
+    local ok, retval, msg = pcall(reaper.MIDI_GetRecentInputEvent, i)
+    if not ok or not retval or retval == 0 or not msg or #msg < 3 then
+      break
+    end
+
+    local status = msg:byte(1)
+    local pitch = msg:byte(2) or 0
+    local velocity = msg:byte(3) or 0
+    local message_type = status & 0xF0
+    local channel = status & 0x0F
+    local key = tostring(channel) .. ":" .. tostring(pitch)
+
+    if (message_type == 0x80 or message_type == 0x90) and not resolved[key] then
+      resolved[key] = true
+      if message_type == 0x90 and velocity > 0 then
+        held[#held + 1] = {
+          channel = channel,
+          pitch = pitch,
+          velocity = velocity,
+        }
+      end
+    end
+  end
+
+  return held
+end
+
+local function insert_held_note_ons(takes, start_time, end_time)
+  local held_notes = current_held_midi_notes()
+  if #held_notes == 0 then
+    return
+  end
+
+  for _, take in ipairs(takes or {}) do
+    if take and reaper.ValidatePtr2(project(), take, "MediaItem_Take*") and reaper.TakeIsMIDI(take) then
+      local start_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, start_time)
+      local end_ppq = reaper.MIDI_GetPPQPosFromProjTime(take, end_time)
+      for _, note in ipairs(held_notes) do
+        local note_on = string.char(0x90 | note.channel, note.pitch, note.velocity)
+        local note_off = string.char(0x80 | note.channel, note.pitch, 0)
+        reaper.MIDI_InsertEvt(take, false, false, start_ppq, note_on)
+        reaper.MIDI_InsertEvt(take, false, false, end_ppq, note_off)
+      end
+      reaper.MIDI_Sort(take)
+    end
+  end
+end
+
+local function prepare_midi_overdub_recording(tracks, start_time, end_time)
+  local takes = ensure_midi_items_for_overdub(tracks, start_time, end_time)
+  insert_held_note_ons(takes, start_time, end_time)
 end
 
 local function store_last_loopstation_take(items)
@@ -866,7 +957,7 @@ function M.start_loop_recording()
   local end_time = block_end(start_time, bars)
   local record_context = begin_target_recording_context()
   if use_midi_overdub then
-    ensure_midi_items_for_overdub(overdub_target_tracks(), start_time, end_time)
+    prepare_midi_overdub_recording(overdub_target_tracks(), start_time, end_time)
   end
   local initial_guids = snapshot_item_guids()
   local recording_started = false
@@ -986,7 +1077,7 @@ function M.queue_loopstation_recording(target_track)
     reaper.SetEditCurPos2(project(), start_time, true, false)
     record_context = begin_target_recording_context(target_tracks)
     if use_midi_overdub then
-      ensure_midi_items_for_overdub(overdub_target_tracks(target_tracks), start_time, end_time)
+      prepare_midi_overdub_recording(overdub_target_tracks(target_tracks), start_time, end_time)
     end
     initial_guids = snapshot_item_guids()
     set_ext(LOOPSTATION_QUEUE_KEY, "recording")
@@ -1065,7 +1156,7 @@ function M.queue_loopstation_recording(target_track)
     if not recording_started and at_loop_start(play_pos) then
       record_context = begin_target_recording_context(target_tracks)
       if use_midi_overdub then
-        ensure_midi_items_for_overdub(overdub_target_tracks(target_tracks), start_time, end_time)
+        prepare_midi_overdub_recording(overdub_target_tracks(target_tracks), start_time, end_time)
       end
       initial_guids = snapshot_item_guids()
       set_ext(LOOPSTATION_QUEUE_KEY, "recording")
