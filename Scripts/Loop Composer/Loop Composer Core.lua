@@ -340,23 +340,6 @@ local function earliest_midi_ppq(take)
   return earliest
 end
 
-local function align_midi_take_to_ppq_zero(take)
-  local earliest = earliest_midi_ppq(take)
-  if earliest and earliest > 0 then
-    shift_midi_take_events(take, -earliest)
-  end
-end
-
-local function set_midi_item_extents(item, start_time, end_time)
-  if not item or not reaper.MIDI_SetItemExtents then
-    return
-  end
-
-  local start_qn = reaper.TimeMap2_timeToQN(project(), start_time)
-  local end_qn = reaper.TimeMap2_timeToQN(project(), end_time)
-  reaper.MIDI_SetItemExtents(item, start_qn, end_qn)
-end
-
 local function shift_midi_take_events(take, delta_ppq)
   if not take or not reaper.TakeIsMIDI(take) or delta_ppq == 0 then
     return
@@ -390,6 +373,23 @@ local function shift_midi_take_events(take, delta_ppq)
   end
 
   reaper.MIDI_Sort(take)
+end
+
+local function align_midi_take_to_ppq_zero(take)
+  local earliest = earliest_midi_ppq(take)
+  if earliest and earliest > 0 then
+    shift_midi_take_events(take, -earliest)
+  end
+end
+
+local function set_midi_item_extents(item, start_time, end_time)
+  if not item or not reaper.MIDI_SetItemExtents then
+    return
+  end
+
+  local start_qn = reaper.TimeMap2_timeToQN(project(), start_time)
+  local end_qn = reaper.TimeMap2_timeToQN(project(), end_time)
+  reaper.MIDI_SetItemExtents(item, start_qn, end_qn)
 end
 
 local function midi_items_at_time(track, start_time)
