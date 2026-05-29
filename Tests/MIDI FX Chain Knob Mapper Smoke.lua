@@ -2,6 +2,7 @@ local script_dir = (... and (...):match("^(.*[/\\])")) or "Scripts/MIDI FX Chain
 
 local extstate = {}
 local selected_track = { guid = "{TRACK-1}", name = "Track 1" }
+local mock_time = 0
 local fx = {
   { name = "JS: MIDI FX Chain Knob Mapper", guid = "{MAPPER}", params = { 2, 0, 0, 0, 0, 0, 0, 0 } },
   { name = "VST: Test FX", guid = "{TARGET}", params = { 0.5, 0.25 } },
@@ -38,7 +39,8 @@ local reaper_mock = {
   SetProjExtState = function(_, section, key, value)
     extstate[section .. ":" .. key] = tostring(value or "")
   end,
-  defer = function() end,
+  time_precise = function() return mock_time end,
+  defer = function(fn) fn() end,
 }
 
 local gfx_mock = {
@@ -53,7 +55,12 @@ local gfx_mock = {
   rect = function() end,
   drawstr = function() end,
   update = function() end,
-  getchar = function() return -1 end,
+  getchar = function()
+    if gfx_mock.after_first_loop then return -1 end
+    gfx_mock.after_first_loop = true
+    fx[2].params[2] = 0.75
+    return 0
+  end,
 }
 
 local env = {
@@ -81,5 +88,13 @@ assert_equal(type(extstate), "table", "extstate table")
 assert_equal(fx[1].params[1], 0, "slot 1 delta reset")
 assert_equal(string.format("%.2f", fx[2].params[1]), "0.52", "slot 1 target nudge")
 assert_equal(fx[1].params[9], 1, "slot 1 mapped status")
+
+gfx_mock.after_first_loop = false
+gfx_mock.mouse_x = 565
+gfx_mock.mouse_y = 120
+gfx_mock.mouse_cap = 1
+fx[2].params[2] = 0.25
+chunk()
+assert_equal(extstate["KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER:track:{TRACK-1}"]:match("2|1|0%.005000|1|{TARGET}|VST: Test FX|1|Param 2") ~= nil, true, "slot 2 learned target")
 
 print("MIDI FX Chain Knob Mapper smoke tests passed")

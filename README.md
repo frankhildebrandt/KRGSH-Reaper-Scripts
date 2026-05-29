@@ -180,7 +180,10 @@ Akai MPK mini plus knobs in relative mode:
   inserts the mapper JSFX on the selected track if needed, and maps each knob to
   one parameter in that track's FX chain.
 - Click an FX field to choose the target FX, then click the parameter field to
-  choose the target parameter. Use `-` and `+` to adjust per-knob sensitivity.
+  choose the target parameter.
+- Click `Learn`, move one FX parameter in the selected track's FX chain, and the
+  slot assigns itself to that changed parameter. Use `-` and `+` to adjust
+  per-knob sensitivity.
 
 Set the MPK mini plus knobs to relative `1/127` mode. Values 1 through 63 nudge
 the mapped parameter upward, and values 65 through 127 nudge it downward.

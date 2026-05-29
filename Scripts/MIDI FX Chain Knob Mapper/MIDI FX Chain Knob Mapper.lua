@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 1.0.0
+-- @version 1.1.0
 -- @author KRGSH
 -- @about
 --   Assigns 8 relative MIDI knobs from the companion JSFX to parameters in the selected track FX chain.
@@ -16,6 +16,9 @@ local current_track
 local current_track_guid = ""
 local mapper_fx = -1
 local mouse_was_down = false
+local learn_slot = nil
+local learn_snapshot = nil
+local learn_started_at = 0
 
 local function clamp(value, lo, hi)
   if value < lo then return lo end
@@ -204,9 +207,82 @@ local function param_name(track, fx, param)
   return name or ("Param " .. tostring(param + 1))
 end
 
+local function capture_parameter_snapshot(track)
+  local snapshot = {}
+  if not track then return snapshot end
+
+  for fx = 0, reaper.TrackFX_GetCount(track) - 1 do
+    if fx ~= mapper_fx then
+      for param = 0, reaper.TrackFX_GetNumParams(track, fx) - 1 do
+        snapshot[fx .. ":" .. param] = reaper.TrackFX_GetParamNormalized(track, fx, param)
+      end
+    end
+  end
+
+  return snapshot
+end
+
+local function assign_slot(slot, fx, param)
+  local mapping = slots[slot] or default_slot(slot)
+  mapping.enabled = true
+  mapping.target_fx_index = fx
+  mapping.target_fx_guid = fx_guid(current_track, fx)
+  mapping.target_fx_name = fx_name(current_track, fx)
+  mapping.target_param = param
+  mapping.target_param_name = param_name(current_track, fx, param)
+  slots[slot] = mapping
+  save_slots()
+end
+
+local function start_learn(slot)
+  if not current_track or mapper_fx < 0 then return end
+  learn_slot = slot
+  learn_snapshot = capture_parameter_snapshot(current_track)
+  learn_started_at = reaper.time_precise and reaper.time_precise() or 0
+end
+
+local function cancel_learn()
+  learn_slot = nil
+  learn_snapshot = nil
+  learn_started_at = 0
+end
+
+local function poll_learn()
+  if not learn_slot or not current_track or mapper_fx < 0 or not learn_snapshot then return end
+
+  local now = reaper.time_precise and reaper.time_precise() or 0
+  if learn_started_at > 0 and now - learn_started_at > 20 then
+    cancel_learn()
+    return
+  end
+
+  local best_fx, best_param, best_delta = nil, nil, 0
+  for fx = 0, reaper.TrackFX_GetCount(current_track) - 1 do
+    if fx ~= mapper_fx then
+      for param = 0, reaper.TrackFX_GetNumParams(current_track, fx) - 1 do
+        local key = fx .. ":" .. param
+        local old_value = learn_snapshot[key]
+        if old_value ~= nil then
+          local value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
+          local delta = math.abs(value - old_value)
+          if delta > best_delta then
+            best_fx, best_param, best_delta = fx, param, delta
+          end
+        end
+      end
+    end
+  end
+
+  if best_fx and best_delta >= 0.00001 then
+    assign_slot(learn_slot, best_fx, best_param)
+    cancel_learn()
+  end
+end
+
 local function refresh_track()
   local track = selected_track()
   if track ~= current_track then
+    cancel_learn()
     current_track = track
     current_track_guid = track_guid(track)
     if track then
@@ -326,14 +402,7 @@ local function choose_param(slot)
   local param = params[choice - 1]
   if not param then return end
 
-  mapping.enabled = true
-  mapping.target_param = param
-  mapping.target_param_name = param_name(current_track, fx, param)
-  mapping.target_fx_index = fx
-  mapping.target_fx_guid = fx_guid(current_track, fx)
-  mapping.target_fx_name = fx_name(current_track, fx)
-  slots[slot] = mapping
-  save_slots()
+  assign_slot(slot, fx, param)
 end
 
 local function adjust_sensitivity(slot, amount)
@@ -399,8 +468,9 @@ local function draw_ui()
 
     local fx_label = mapped and fx_name(current_track, fx) or (mapping.enabled and "Unresolved FX" or "Choose FX")
     local param_label = mapped and param_name(current_track, fx, param) or "Choose parameter"
-    draw_button(126, y - 1, 252, 24, fx_label, mapped)
-    draw_button(386, y - 1, 252, 24, param_label, mapped)
+    draw_button(126, y - 1, 210, 24, fx_label, mapped)
+    draw_button(344, y - 1, 210, 24, param_label, mapped)
+    draw_button(562, y - 1, 72, 24, learn_slot == slot and "Learning" or "Learn", learn_slot == slot)
 
     draw_button(646, y - 1, 28, 24, "-", false)
     draw_text(682, y + 3, string.format("%.3f", mapping.sensitivity or DEFAULT_SENSITIVITY), 0.72, 0.75, 0.74)
@@ -418,12 +488,20 @@ local function handle_mouse()
 
   local y = 82
   for slot = 1, SLOT_COUNT do
-    if point_in_rect(126, y - 1, 252, 24) then
+    if point_in_rect(126, y - 1, 210, 24) then
       choose_fx(slot)
       return
     end
-    if point_in_rect(386, y - 1, 252, 24) then
+    if point_in_rect(344, y - 1, 210, 24) then
       choose_param(slot)
+      return
+    end
+    if point_in_rect(562, y - 1, 72, 24) then
+      if learn_slot == slot then
+        cancel_learn()
+      else
+        start_learn(slot)
+      end
       return
     end
     if point_in_rect(646, y - 1, 28, 24) then
@@ -440,6 +518,7 @@ end
 
 local function loop()
   refresh_track()
+  poll_learn()
   poll_mapper_deltas()
   update_mapper_status()
   draw_ui()
