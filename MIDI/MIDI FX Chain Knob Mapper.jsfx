@@ -1,4 +1,4 @@
-version: 1.0.0
+version: 1.0.1
 author: KRGSH
 vendor: KRGSH
 desc: MIDI FX Chain Knob Mapper
@@ -71,14 +71,14 @@ function relative_delta(value) local(delta) (
 );
 
 function add_knob_delta(slot, delta) (
-  slot == 0 ? (slider1 += delta; sliderchange(slider1); activity1 = 24; last_delta1 = delta;);
-  slot == 1 ? (slider2 += delta; sliderchange(slider2); activity2 = 24; last_delta2 = delta;);
-  slot == 2 ? (slider3 += delta; sliderchange(slider3); activity3 = 24; last_delta3 = delta;);
-  slot == 3 ? (slider4 += delta; sliderchange(slider4); activity4 = 24; last_delta4 = delta;);
-  slot == 4 ? (slider5 += delta; sliderchange(slider5); activity5 = 24; last_delta5 = delta;);
-  slot == 5 ? (slider6 += delta; sliderchange(slider6); activity6 = 24; last_delta6 = delta;);
-  slot == 6 ? (slider7 += delta; sliderchange(slider7); activity7 = 24; last_delta7 = delta;);
-  slot == 7 ? (slider8 += delta; sliderchange(slider8); activity8 = 24; last_delta8 = delta;);
+  slot == 0 ? (slider1 += delta; sliderchange(1); activity1 = 24; last_delta1 = delta;);
+  slot == 1 ? (slider2 += delta; sliderchange(2); activity2 = 24; last_delta2 = delta;);
+  slot == 2 ? (slider3 += delta; sliderchange(4); activity3 = 24; last_delta3 = delta;);
+  slot == 3 ? (slider4 += delta; sliderchange(8); activity4 = 24; last_delta4 = delta;);
+  slot == 4 ? (slider5 += delta; sliderchange(16); activity5 = 24; last_delta5 = delta;);
+  slot == 5 ? (slider6 += delta; sliderchange(32); activity6 = 24; last_delta6 = delta;);
+  slot == 6 ? (slider7 += delta; sliderchange(64); activity7 = 24; last_delta7 = delta;);
+  slot == 7 ? (slider8 += delta; sliderchange(128); activity8 = 24; last_delta8 = delta;);
 );
 
 function draw_knob(cx, cy, radius, value, mapped, active, label, cc, sensitivity, delta)
@@ -143,6 +143,9 @@ while (midirecv(offset, msg1, msg23)) (
   status == $xB0 ? (
     cc = msg23 & $x7F;
     value = (msg23 >> 8) & $x7F;
+    last_cc = cc;
+    last_cc_value = value;
+    midi_activity = 24;
 
     cc >= CC_FIRST && cc <= CC_LAST ? (
       delta = relative_delta(value);
@@ -172,6 +175,17 @@ gfx_x = 24;
 gfx_y = 42;
 gfx_drawstr("CC16-CC23 relative controls. Run the companion action to assign FX parameters.");
 
+gfx_set(0.58, 0.62, 0.62, 1);
+midi_activity > 0 ? (
+  sprintf(#midi_status, "Last CC %d  value %d", last_cc, last_cc_value);
+) : (
+  sprintf(#midi_status, "Waiting for CC16-CC23");
+);
+gfx_measurestr(#midi_status, status_w, status_h);
+gfx_x = gfx_w - status_w - 22;
+gfx_y = 42;
+gfx_drawstr(#midi_status);
+
 gfx_setfont(3, "Arial", 13);
 
 cell_w = gfx_w / 4;
@@ -198,3 +212,4 @@ activity5 > 0 ? activity5 -= 1;
 activity6 > 0 ? activity6 -= 1;
 activity7 > 0 ? activity7 -= 1;
 activity8 > 0 ? activity8 -= 1;
+midi_activity > 0 ? midi_activity -= 1;

@@ -187,6 +187,8 @@ Akai MPK mini plus knobs in relative mode:
 - The mapper window is dockable and shows the current mapped parameter values.
   Target parameter changes are mirrored back into the JSFX knob display while
   JSFX knob movement is applied to the target parameter.
+- Keep the mapper JSFX before instruments or MIDI-consuming FX. The companion
+  script moves it to the beginning of the selected track FX chain automatically.
 
 Set the MPK mini plus knobs to relative `1/127` mode. Values 1 through 63 nudge
 the mapped parameter upward, and values 65 through 127 nudge it downward.

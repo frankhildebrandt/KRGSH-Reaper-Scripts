@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 1.2.0
+-- @version 1.2.1
 -- @author KRGSH
 -- @about
 --   Assigns 8 relative MIDI knobs from the companion JSFX to parameters in the selected track FX chain.
@@ -183,11 +183,21 @@ end
 
 local function ensure_mapper_fx(track)
   local fx = find_mapper_fx(track)
-  if fx >= 0 then return fx end
+  if fx >= 0 then
+    if fx > 0 and reaper.TrackFX_CopyToTrack then
+      reaper.TrackFX_CopyToTrack(track, fx, track, 0, true)
+      return 0
+    end
+    return fx
+  end
 
   fx = reaper.TrackFX_AddByName(track, "JS: MIDI FX Chain Knob Mapper", false, 1)
   if fx < 0 then
     fx = reaper.TrackFX_AddByName(track, MAPPER_NAME, false, 1)
+  end
+  if fx > 0 and reaper.TrackFX_CopyToTrack then
+    reaper.TrackFX_CopyToTrack(track, fx, track, 0, true)
+    return 0
   end
   return fx
 end
@@ -333,10 +343,7 @@ local function refresh_track()
       reset_slots()
     end
   elseif track then
-    mapper_fx = find_mapper_fx(track)
-    if mapper_fx < 0 then
-      mapper_fx = ensure_mapper_fx(track)
-    end
+    mapper_fx = ensure_mapper_fx(track)
   end
 end
 
