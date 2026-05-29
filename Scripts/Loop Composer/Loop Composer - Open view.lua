@@ -1,5 +1,5 @@
 -- @description Loop Composer - Open view
--- @version 1.4.16
+-- @version 1.5.0
 -- @author KRGSH
 -- @noindex
 -- @provides
@@ -38,6 +38,10 @@ local learning_control = nil
 local last_midi_fingerprint = ""
 local controls = {}
 local actions = {}
+
+local function set_message(value)
+  last_message = tostring(value or "")
+end
 
 local function set_color(color, alpha)
   gfx.set(color[1], color[2], color[3], alpha or color[4])
@@ -179,13 +183,13 @@ local function open_context_menu(control)
   local choice = gfx.showmenu("MIDI learn|Reset MIDI mapping||Reserved")
   if choice == 1 then
     learning_control = control
-    last_message = "Move a MIDI control for " .. control.label
+    set_message("MIDI learn: move a control for " .. control.label)
   elseif choice == 2 then
     core.reset_midi_mapping(control.id)
     if learning_control and learning_control.id == control.id then
       learning_control = nil
     end
-    last_message = "MIDI mapping reset for " .. control.label
+    set_message("MIDI mapping reset: " .. control.label)
   end
 end
 
@@ -196,9 +200,9 @@ local function run_action(control)
 
   local ok, result, message = pcall(control.action)
   if ok then
-    last_message = message or result or ""
+    set_message(message or result)
   else
-    last_message = tostring(result)
+    set_message(result)
   end
 end
 
@@ -258,6 +262,11 @@ local function button(id, label, icon, x, y, w, h, action, options)
   elseif left_clicked then
     run_action(control)
   end
+end
+
+local function icon_button(id, label, icon, x, y, action, options)
+  button(id, label, icon, x, y, ICON_BUTTON, BUTTON_H, action, options)
+  return x + ICON_BUTTON + GAP
 end
 
 local function label_value(label, value, x, y, right)
@@ -331,52 +340,43 @@ local function draw_transport(status, y)
   local x = PADDING
   local by = y + 28
 
-  button("transport_play", "Play", "play", x, by, ICON_BUTTON, BUTTON_H, function()
+  x = icon_button("transport_play", "Play", "play", x, by, function()
     core.play()
     return "Play"
   end, { active = status.is_playing and not status.is_recording, active_color = colors.accent_dark })
-  x = x + ICON_BUTTON + GAP
-  button("transport_pause", "Pause", "pause", x, by, ICON_BUTTON, BUTTON_H, function()
+  x = icon_button("transport_pause", "Pause", "pause", x, by, function()
     core.pause()
     return "Pause"
   end, { active = status.is_paused, active_color = colors.warning })
-  x = x + ICON_BUTTON + GAP
-  button("transport_stop", "Stop", "stop", x, by, ICON_BUTTON, BUTTON_H, function()
+  x = icon_button("transport_stop", "Stop", "stop", x, by, function()
     core.stop()
     return "Stop"
   end)
-  x = x + ICON_BUTTON + GAP
-  button("transport_record", "Record", "record", x, by, ICON_BUTTON, BUTTON_H, function()
+  x = icon_button("transport_record", "Record", "record", x, by, function()
     core.record()
     return "Record"
   end, { active = status.is_recording, style = colors.record, icon_color = colors.text })
-  x = x + ICON_BUTTON + GAP
-  button("transport_repeat", "Loop", "loop", x, by, ICON_BUTTON, BUTTON_H, function()
+  x = icon_button("transport_repeat", "Loop", "loop", x, by, function()
     core.toggle_repeat()
     return "Loop toggled"
   end, { active = status.repeat_enabled, active_color = colors.accent_dark })
-  x = x + ICON_BUTTON + GAP
-  button("block_start", "Start", "start", x, by, ICON_BUTTON, BUTTON_H, function()
+  x = icon_button("block_start", "Start", "start", x, by, function()
     core.jump_block_start()
     return "Jumped to block start"
   end)
-  x = x + ICON_BUTTON + GAP
-  button("block_end", "End", "end", x, by, ICON_BUTTON, BUTTON_H, function()
+  x = icon_button("block_end", "End", "end", x, by, function()
     core.jump_block_end()
     return "Jumped to block end"
   end)
-  x = x + ICON_BUTTON + GAP
-  button("block_prev", "Prev", "prev", x, by, ICON_BUTTON, BUTTON_H, function()
+  x = icon_button("block_prev", "Prev", "prev", x, by, function()
     core.navigate(-1)
     return "Previous block"
   end)
-  x = x + ICON_BUTTON + GAP
-  button("block_next", "Next", "next", x, by, ICON_BUTTON, BUTTON_H, function()
+  x = icon_button("block_next", "Next", "next", x, by, function()
     core.navigate(1)
     return "Next block"
   end)
-  x = x + ICON_BUTTON + GAP
-  button("dock_toggle", "Dock", "dock", x, by, ICON_BUTTON, BUTTON_H, function()
+  icon_button("dock_toggle", "Dock", "dock", x, by, function()
     local dock_state = gfx.dock(-1)
     local next_state = dock_state == 0 and 1 or 0
     gfx.dock(next_state)
@@ -477,7 +477,7 @@ local function draw_tracks(status, y, tracks)
 
   local row_y = by + 44
   if #tracks == 0 then
-    text(PADDING, row_y + 8, "No target tracks. Select tracks in REAPER, then use selected.", colors.muted)
+    text(PADDING, row_y + 8, "No target tracks mapped. Select tracks, then use selected.", colors.muted)
     return
   end
 
@@ -488,7 +488,7 @@ local function draw_tracks(status, y, tracks)
     local x = PADDING + (column * (w + GAP))
     local y_pos = row_y + (row * (BUTTON_H + GAP))
     local id = "track_slot_" .. tostring(i)
-    local label = tostring(track.track_number) .. "  " .. track.name
+    local label = track.exists and (tostring(track.track_number) .. "  " .. track.name) or ("Missing: " .. track.name)
     button(id, label, "queue", x, y_pos, w, BUTTON_H, function()
       local ok, message = core.toggle_target_loopstation_recording(i)
       return message or (ok and "Recording queued" or "Target track unavailable")
@@ -502,7 +502,7 @@ local function draw_tracks(status, y, tracks)
 end
 
 local function draw_sws_status(status)
-  local message = "SWS missing"
+  local message = "SWS unavailable"
   local color = colors.warning
   if status.sws_available then
     message = "SWS " .. tostring(status.sws_version or "available")
@@ -520,7 +520,7 @@ local function process_midi()
   last_midi_fingerprint = event.fingerprint
   if learning_control then
     core.set_midi_mapping(learning_control.id, event)
-    last_message = learning_control.label .. " mapped to " .. event.label
+    set_message("MIDI mapped: " .. learning_control.label .. " -> " .. event.label)
     learning_control = nil
     return
   end

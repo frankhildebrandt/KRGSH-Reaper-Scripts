@@ -1,9 +1,15 @@
 -- @description Loop Composer
--- @version 1.4.16
+-- @version 1.5.0
 -- @author KRGSH
 -- @metapackage
 -- @provides
 --   [nomain] Loop Composer Core.lua
+--   [nomain] Loop Composer Env.lua
+--   [nomain] Loop Composer Tracks.lua
+--   [nomain] Loop Composer Items.lua
+--   [nomain] Loop Composer Midi.lua
+--   [nomain] Loop Composer Recording.lua
+--   [nomain] Loop Composer Transport.lua
 --   [main] Loop Composer - Set length to 4 bars.lua
 --   [main] Loop Composer - Set length to 8 bars.lua
 --   [main] Loop Composer - Set length to 16 bars.lua

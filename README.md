@@ -36,6 +36,9 @@ are pushed to `main`. Pull requests validate the package metadata before merge.
 5. Add Lua scripts through `Actions` > `Show action list` > `New action` >
    `Load ReaScript`.
 
+For Loop Composer, keep the files in `Scripts/Loop Composer` together because
+the action scripts load shared internal modules from the same directory.
+
 The repository layout and JSFX metadata are ready for the ReaPack indexer as
 well.
 

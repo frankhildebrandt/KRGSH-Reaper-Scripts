@@ -1,5 +1,5 @@
 -- @description Loop Composer - Install standard toolbar
--- @version 1.4.16
+-- @version 1.5.0
 -- @author KRGSH
 -- @noindex
 -- @provides
@@ -107,19 +107,30 @@ local menu = {
   "title=Loop Composer",
 }
 
+local function add_separator(menu, item_index)
+  menu[#menu + 1] = "item_" .. item_index .. "=--"
+  return item_index + 1
+end
+
+local function add_action(menu, item_index, command_id, icon, label)
+  menu[#menu + 1] = "item_" .. item_index .. "=" .. command_id .. " " .. label
+  menu[#menu + 1] = "icon_" .. item_index .. "=" .. icon
+  return item_index + 1
+end
+
 local item_index = 1
 for _, action in ipairs(actions) do
   local script_file, icon, label = action[1], action[2], action[3]
   if script_file == "" then
-    menu[#menu + 1] = "item_" .. item_index .. "=--"
-    item_index = item_index + 1
+    item_index = add_separator(menu, item_index)
   else
     local command_id = command_id_for_script(script_file)
     if command_id then
-      copy_file(join_path(icon_source_dir, icon), join_path(icon_dest_dir, icon))
-      menu[#menu + 1] = "item_" .. item_index .. "=" .. command_id .. " " .. label
-      menu[#menu + 1] = "icon_" .. item_index .. "=" .. icon
-      item_index = item_index + 1
+      if copy_file(join_path(icon_source_dir, icon), join_path(icon_dest_dir, icon)) then
+        item_index = add_action(menu, item_index, command_id, icon, label)
+      else
+        missing[#missing + 1] = icon
+      end
     else
       missing[#missing + 1] = script_file
     end
@@ -132,7 +143,7 @@ local message = "Created Loop Composer toolbar menu set:\n\n" .. menu_dest_path 
   "\n\nImport it via Options > Customize menus/toolbars > Import."
 
 if #missing > 0 then
-  message = message .. "\n\nMissing actions, install/reload these scripts first:\n- " .. table.concat(missing, "\n- ")
+  message = message .. "\n\nMissing actions or icons, install/reload these files first:\n- " .. table.concat(missing, "\n- ")
 end
 
 reaper.ShowMessageBox(message, "Loop Composer", 0)
