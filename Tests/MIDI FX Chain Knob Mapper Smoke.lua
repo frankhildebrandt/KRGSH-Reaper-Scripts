@@ -32,6 +32,9 @@ local reaper_mock = {
   TrackFX_GetFormattedParamValue = function(_, index, param)
     return true, string.format("%.0f", (fx[index + 1].params[param + 1] or 0) * 100)
   end,
+  TrackFX_FormatParamValueNormalized = function(_, _, _, value)
+    return true, string.format("%.0f", (value or 0) * 100)
+  end,
   TrackFX_GetParamNormalized = function(_, index, param) return fx[index + 1].params[param + 1] or 0 end,
   TrackFX_SetParamNormalized = function(_, index, param, value)
     set_param_calls = set_param_calls + 1
@@ -115,12 +118,14 @@ assert_equal(helpers.relativeCCValueToDelta(64), 0, "relative 64")
 assert_equal(helpers.relativeCCValueToDelta(65), -63, "relative 65")
 assert_equal(helpers.relativeCCValueToDelta(126), -2, "relative 126")
 assert_equal(helpers.relativeCCValueToDelta(127), -1, "relative 127")
+assert_equal(helpers.relativeCCValueToDelta(128), -1, "relative 128")
 assert_equal(helpers.relativeCCValueToDelta(0), 0, "relative 0")
 assert_equal(helpers.relativeCCValueToDelta(65, "binary_offset"), 1, "binary offset +1")
 assert_equal(helpers.relativeCCValueToDelta(63, "binary_offset"), -1, "binary offset -1")
 assert_equal(helpers.relativeCCValueToDelta(65, "signed_bit"), -1, "signed bit -1")
 assert_equal(helpers.relativeCCValueToDelta(1, "inc_dec_1_127"), 1, "inc/dec 1/127 +1")
 assert_equal(helpers.relativeCCValueToDelta(127, "inc_dec_1_127"), -1, "inc/dec 1/127 -1")
+assert_equal(helpers.relativeCCValueToDelta(128, "inc_dec_1_127"), -1, "inc/dec 1/128 -1")
 assert_equal(helpers.relativeCCValueToDelta(65, "inc_dec_63_65"), 1, "inc/dec 63/65 +1")
 assert_equal(helpers.relativeCCValueToDelta(63, "inc_dec_63_65"), -1, "inc/dec 63/65 -1")
 
@@ -133,6 +138,7 @@ assert_equal(string.format("%.3f", helpers.normalizedToMappingOutput(0.5, curve_
 set_param_calls = 0
 assert_equal(string.format("%.3f", helpers.displayDeltaToNormalizedDelta(selected_track, 0, 0, 1)), "0.010", "display delta fallback")
 assert_equal(set_param_calls, 0, "display delta conversion does not set parameter")
+assert_equal(string.format("%.3f", helpers.displayValueToNormalized(selected_track, 0, 0, 17, 0.16, 16)), "0.165", "integer display target search")
 helpers.decode_slots("1|1|0.005000|0|{TARGET}|VST: Test FX|0|Param 1")
 local migrated = helpers.encode_slots()
 assert_equal(migrated:match("1|1|1%.000000|0|{TARGET}|VST: Test FX|0|Param 1|relative|twos_complement|0%.000000|1%.000000|1%.000000|0|1") ~= nil, true, "legacy migration")

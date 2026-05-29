@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 2.1.2
+-- @version 2.1.3
 -- @author KRGSH
 -- @about
 --   Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.
@@ -43,6 +43,7 @@ local learn_started_at = 0
 local last_dock_state = nil
 local seen_midi = {}
 local seen_midi_order = {}
+local slot_source_devices = {}
 local midi_primed = false
 local last_cc = nil
 local last_cc_value = nil
@@ -132,6 +133,11 @@ end
 local function valid_midi_data_byte(value)
   value = tonumber(value)
   return value and value >= 0 and value <= 127 and value == math.floor(value)
+end
+
+local function valid_relative_value_byte(value)
+  value = tonumber(value)
+  return value and value >= 0 and value <= 128 and value == math.floor(value)
 end
 
 local function default_slot(slot)
@@ -375,6 +381,46 @@ local function formatted_param_number_at_normalized(track, fx, param, normalized
   return tonumber(number)
 end
 
+local function display_value_to_normalized(track, fx, param, target_display, current_normalized, current_display)
+  if not reaper.TrackFX_FormatParamValueNormalized or not target_display or not current_display then
+    return nil
+  end
+
+  current_normalized = clamp(current_normalized, 0, 1)
+  if target_display == current_display then
+    return current_normalized
+  end
+
+  local upward = target_display > current_display
+  local lo = upward and current_normalized or 0
+  local hi = upward and 1 or current_normalized
+  local best = nil
+
+  for _ = 1, 18 do
+    local mid = (lo + hi) * 0.5
+    local display = formatted_param_number_at_normalized(track, fx, param, mid)
+    if not display then return nil end
+
+    if upward then
+      if display >= target_display then
+        best = mid
+        hi = mid
+      else
+        lo = mid
+      end
+    else
+      if display <= target_display then
+        best = mid
+        lo = mid
+      else
+        hi = mid
+      end
+    end
+  end
+
+  return best
+end
+
 local function display_delta_to_normalized_delta(track, fx, param, display_delta)
   local current_normalized = reaper.TrackFX_GetParamNormalized(track, fx, param)
   local current_display = formatted_param_number(track, fx, param)
@@ -521,7 +567,7 @@ end
 
 local function relativeCCValueToDelta(value, mode)
   value = tonumber(value)
-  if not valid_midi_data_byte(value) then return 0 end
+  if not valid_relative_value_byte(value) then return 0 end
 
   mode = normalize_relative_mode(mode)
   if mode == "binary_offset" then
@@ -533,7 +579,7 @@ local function relativeCCValueToDelta(value, mode)
     return (value & 0x40) == 0x40 and -magnitude or magnitude
   elseif mode == "inc_dec_1_127" then
     if value == 1 then return 1 end
-    if value == 127 then return -1 end
+    if value == 127 or value == 128 then return -1 end
     return 0
   elseif mode == "inc_dec_63_65" then
     if value == 65 then return 1 end
@@ -542,12 +588,13 @@ local function relativeCCValueToDelta(value, mode)
   end
 
   if value == 0 or value == 64 then return 0 end
+  if value == 128 then return -1 end
   if value >= 1 and value <= 63 then return value end
   return value - 128
 end
 
 local function relativeCCEventToDelta(status, cc_number, cc_value, expected_channel, mode)
-  if not valid_midi_byte(status) or not valid_midi_data_byte(cc_number) or not valid_midi_data_byte(cc_value) then
+  if not valid_midi_byte(status) or not valid_midi_data_byte(cc_number) or not valid_relative_value_byte(cc_value) then
     return 0
   end
 
@@ -570,6 +617,7 @@ local function run_unit_tests()
     { "twos_complement", 65, -63 },
     { "twos_complement", 126, -2 },
     { "twos_complement", 127, -1 },
+    { "twos_complement", 128, -1 },
     { "twos_complement", 0, 0 },
     { "binary_offset", 64, 0 },
     { "binary_offset", 65, 1 },
@@ -582,12 +630,12 @@ local function run_unit_tests()
     { "signed_bit", 127, -63 },
     { "inc_dec_1_127", 1, 1 },
     { "inc_dec_1_127", 127, -1 },
+    { "inc_dec_1_127", 128, -1 },
     { "inc_dec_1_127", 64, 0 },
     { "inc_dec_63_65", 65, 1 },
     { "inc_dec_63_65", 63, -1 },
     { "inc_dec_63_65", 1, 0 },
     { "twos_complement", -1, 0 },
-    { "twos_complement", 128, 0 },
   }
 
   for _, case in ipairs(cases) do
@@ -636,6 +684,7 @@ local function export_for_tests()
     DEFAULT_RELATIVE_MODE = DEFAULT_RELATIVE_MODE,
     absoluteCCValueToNormalized = absoluteCCValueToNormalized,
     decode_slots = decode_slots,
+    displayValueToNormalized = display_value_to_normalized,
     displayDeltaToNormalizedDelta = display_delta_to_normalized_delta,
     encode_slots = encode_slots,
     normalizedToMappingOutput = normalized_to_mapping_output,
@@ -694,9 +743,20 @@ local function apply_slot_midi_event(slot, status, cc_value)
 
   local current_value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
   local display_delta = delta * mapping.sensitivity
-  local normalized_delta = display_delta_to_normalized_delta(current_track, fx, param, display_delta)
   local lo, hi = mapping_bounds(mapping)
-  local next_value = clamp(current_value + normalized_delta, lo, hi)
+  local current_display = formatted_param_number(current_track, fx, param)
+  local next_value = nil
+
+  if current_display then
+    next_value = display_value_to_normalized(current_track, fx, param, current_display + display_delta, current_value, current_display)
+  end
+
+  if not next_value then
+    local normalized_delta = display_delta_to_normalized_delta(current_track, fx, param, display_delta)
+    next_value = current_value + normalized_delta
+  end
+
+  next_value = clamp(next_value, lo, hi)
   reaper.TrackFX_SetParamNormalized(current_track, fx, param, next_value)
   return delta
 end
@@ -723,7 +783,7 @@ local function poll_midi_input()
         tostring(data2),
       }, ":")
       if remember_midi_event(key) then
-        events[#events + 1] = { status = status, cc = data1, value = data2 }
+        events[#events + 1] = { status = status, cc = data1, value = data2, device = device }
       end
     end
   end
@@ -740,7 +800,12 @@ local function poll_midi_input()
     local result = 0
 
     if slot > 0 then
-      result = apply_slot_midi_event(slot, event.status, event.value)
+      local event_device = tostring(event.device or "")
+      local source_device = slot_source_devices[slot]
+      if not source_device or source_device == event_device then
+        slot_source_devices[slot] = event_device
+        result = apply_slot_midi_event(slot, event.status, event.value)
+      end
     end
 
     last_cc = event.cc
