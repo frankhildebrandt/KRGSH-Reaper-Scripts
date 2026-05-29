@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 2.0.2
+-- @version 2.0.3
 -- @author KRGSH
 -- @about
 --   Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.
@@ -304,17 +304,94 @@ local function refresh_track()
   end
 end
 
-local function relative_delta(value)
-  -- Common relative encoder modes:
-  -- 1/127, 63/65 binary offset, and 15/16 signed nibble.
-  if value == 1 or value == 16 or value == 65 then return 1 end
-  if value == 127 or value == 15 or value == 63 then return -1 end
+local function valid_midi_byte(value)
+  value = tonumber(value)
+  return value and value >= 0 and value <= 127 and value == math.floor(value)
+end
 
-  -- Treat small two's-complement acceleration values as single detents.
-  if value >= 2 and value <= 8 then return 1 end
-  if value >= 120 and value <= 126 then return -1 end
+local function relativeCCValueToDelta(value)
+  value = tonumber(value)
+  if not valid_midi_byte(value) then return 0 end
 
-  -- Values in the middle usually indicate absolute CC or an unsupported mode.
+  if value == 0 or value == 64 then return 0 end
+  if value >= 1 and value <= 63 then return value end
+  return value - 128
+end
+
+local function relativeCCEventToDelta(status, cc_number, cc_value, expected_channel)
+  if not valid_midi_byte(status) or not valid_midi_byte(cc_number) or not valid_midi_byte(cc_value) then
+    return 0
+  end
+
+  if (status & 0xF0) ~= 0xB0 then return 0 end
+
+  local channel = status & 0x0F
+  if expected_channel ~= nil and channel ~= expected_channel then
+    return 0
+  end
+
+  return relativeCCValueToDelta(cc_value)
+end
+
+local function run_unit_tests()
+  local cases = {
+    { 1, 1 },
+    { 2, 2 },
+    { 63, 63 },
+    { 64, 0 },
+    { 65, -63 },
+    { 126, -2 },
+    { 127, -1 },
+    { 0, 0 },
+    { -1, 0 },
+    { 128, 0 },
+  }
+
+  for _, case in ipairs(cases) do
+    local actual = relativeCCValueToDelta(case[1])
+    if actual ~= case[2] then
+      error("relativeCCValueToDelta(" .. tostring(case[1]) .. ") expected " .. tostring(case[2]) .. ", got " .. tostring(actual), 2)
+    end
+  end
+
+  if relativeCCEventToDelta(0x90, 16, 1) ~= 0 then
+    error("non-CC event should be ignored", 2)
+  end
+
+  if relativeCCEventToDelta(0xB0, 16, 127, 1) ~= 0 then
+    error("wrong MIDI channel should be ignored", 2)
+  end
+
+  if relativeCCEventToDelta(0xB1, 16, 127, 1) ~= -1 then
+    error("matching MIDI channel should be decoded", 2)
+  end
+end
+
+local function export_for_tests()
+  return {
+    relativeCCValueToDelta = relativeCCValueToDelta,
+    relativeCCEventToDelta = relativeCCEventToDelta,
+    run_unit_tests = run_unit_tests,
+  }
+end
+
+if rawget(_G, "KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER_TEST") then
+  return export_for_tests()
+end
+
+local function relative_delta(status, cc_number, cc_value)
+  if cc_number < CC_FIRST or cc_number > CC_LAST then
+    return 0
+  end
+
+  return relativeCCEventToDelta(status, cc_number, cc_value)
+end
+
+local function cc_to_slot(cc_number)
+  if cc_number >= CC_FIRST and cc_number <= CC_LAST then
+    return cc_number - CC_FIRST + 1
+  end
+
   return 0
 end
 
@@ -367,7 +444,7 @@ local function poll_midi_input()
         tostring(data2),
       }, ":")
       if remember_midi_event(key) then
-        events[#events + 1] = { cc = data1, value = data2 }
+        events[#events + 1] = { status = status, cc = data1, value = data2 }
       end
     end
   end
@@ -379,8 +456,8 @@ local function poll_midi_input()
 
   for idx = #events, 1, -1 do
     local event = events[idx]
-    local delta = relative_delta(event.value)
-    local slot = event.cc >= CC_FIRST and event.cc <= CC_LAST and (event.cc - CC_FIRST + 1) or nil
+    local delta = relative_delta(event.status, event.cc, event.value)
+    local slot = cc_to_slot(event.cc)
 
     last_cc = event.cc
     last_cc_value = event.value
@@ -388,7 +465,7 @@ local function poll_midi_input()
     last_cc_slot = slot
     midi_activity_until = reaper.time_precise and (reaper.time_precise() + 1.0) or 1
 
-    if slot then
+    if slot > 0 then
       apply_slot_delta(slot, delta)
     end
   end

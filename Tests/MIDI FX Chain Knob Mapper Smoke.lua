@@ -86,16 +86,35 @@ local env = {
   pairs = pairs,
   print = print,
 }
+env._G = env
 setmetatable(env, { __index = _G })
 
 local chunk, err = loadfile(script_dir .. "MIDI FX Chain Knob Mapper.lua", "t", env)
 if not chunk then
   error(err)
 end
+
+env.KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER_TEST = true
+local helpers = chunk()
+helpers.run_unit_tests()
+assert_equal(helpers.relativeCCValueToDelta(1), 1, "relative 1")
+assert_equal(helpers.relativeCCValueToDelta(2), 2, "relative 2")
+assert_equal(helpers.relativeCCValueToDelta(63), 63, "relative 63")
+assert_equal(helpers.relativeCCValueToDelta(64), 0, "relative 64")
+assert_equal(helpers.relativeCCValueToDelta(65), -63, "relative 65")
+assert_equal(helpers.relativeCCValueToDelta(126), -2, "relative 126")
+assert_equal(helpers.relativeCCValueToDelta(127), -1, "relative 127")
+assert_equal(helpers.relativeCCValueToDelta(0), 0, "relative 0")
+
+env.KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER_TEST = nil
+chunk, err = loadfile(script_dir .. "MIDI FX Chain Knob Mapper.lua", "t", env)
+if not chunk then
+  error(err)
+end
 chunk()
 
 assert_equal(type(extstate), "table", "extstate table")
-assert_equal(string.format("%.2f", fx[1].params[1]), "0.51", "slot 1 target nudge")
+assert_equal(string.format("%.2f", fx[1].params[1]), "0.52", "slot 1 target nudge")
 
 gfx_mock.after_first_loop = false
 midi_event_count = 2

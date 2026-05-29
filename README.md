@@ -184,6 +184,7 @@ mini plus knobs in relative mode:
 - The mapper window is dockable and shows the current mapped parameter values.
   Incoming knob movement is applied directly to the mapped target parameter.
 
-Set the MPK mini plus knobs to relative mode. The mapper recognizes common
-relative encoder pairs including `1/127`, `63/65`, and `15/16`; middle-range
-absolute-looking values are ignored instead of being treated as large jumps.
+Set the MPK mini plus knobs to relative mode. CC values are decoded as signed
+two's-complement deltas: `1..63` increase by that amount, `65..127` decrease by
+`63..1`, and `0` or `64` are treated as no movement. The MPK mini plus `1/127`
+case therefore works as `+1` and `-1`.
