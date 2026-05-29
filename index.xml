@@ -33,7 +33,7 @@ Fixed JSFX memory layout corruption.]]></description>
       <metadata>
         <description><![CDATA[Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.]]></description>
       </metadata>
-      <version name="2.1.4" author="KRGSH" time="2026-05-30T00:00:00Z">
+      <version name="2.1.5" author="KRGSH" time="2026-05-30T00:00:00Z">
         <source file="MIDI FX Chain Knob Mapper.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/MIDI%20FX%20Chain%20Knob%20Mapper/MIDI%20FX%20Chain%20Knob%20Mapper.lua</source>
       </version>
     </reapack>

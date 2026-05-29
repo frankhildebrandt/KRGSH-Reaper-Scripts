@@ -129,6 +129,8 @@ assert_equal(helpers.relativeCCValueToDelta(127, "inc_dec_1_127"), -1, "inc/dec 
 assert_equal(helpers.relativeCCValueToDelta(128, "inc_dec_1_127"), -1, "inc/dec 1/128 -1")
 assert_equal(helpers.relativeCCValueToDelta(65, "inc_dec_63_65"), 1, "inc/dec 63/65 +1")
 assert_equal(helpers.relativeCCValueToDelta(63, "inc_dec_63_65"), -1, "inc/dec 63/65 -1")
+assert_equal(helpers.parseEditNumber("1,25"), 1.25, "manual decimal comma edit")
+assert_equal(helpers.parseEditNumber("1.25"), 1.25, "manual decimal point edit")
 
 local absolute_mapping = helpers.normalizeSlot({ input_mode = "absolute", min = 0.25, max = 0.75 }, 1)
 assert_equal(string.format("%.3f", helpers.absoluteCCValueToNormalized(127, absolute_mapping)), "0.750", "absolute max")

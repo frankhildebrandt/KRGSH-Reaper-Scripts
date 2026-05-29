@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 2.1.4
+-- @version 2.1.5
 -- @author KRGSH
 -- @about
 --   Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.
@@ -123,6 +123,11 @@ end
 
 local function normalize_curve(value)
   return clamp(tonumber(value) or 1, 0.10, 8)
+end
+
+local function parse_edit_number(text)
+  local normalized = tostring(text or ""):gsub(",", ".")
+  return tonumber(normalized)
 end
 
 local function valid_midi_byte(value)
@@ -689,6 +694,7 @@ local function export_for_tests()
     encode_slots = encode_slots,
     normalizedToMappingOutput = normalized_to_mapping_output,
     normalizeSlot = normalize_slot,
+    parseEditNumber = parse_edit_number,
     relativeCCValueToDelta = relativeCCValueToDelta,
     relativeCCEventToDelta = relativeCCEventToDelta,
     run_unit_tests = run_unit_tests,
@@ -971,7 +977,7 @@ end
 
 local function commit_edit()
   if not edit_focus then return end
-  set_field_value(edit_focus.slot, edit_focus.field, tonumber((edit_focus.text or ""):gsub(",", ".")))
+  set_field_value(edit_focus.slot, edit_focus.field, parse_edit_number(edit_focus.text))
   edit_focus = nil
 end
 
