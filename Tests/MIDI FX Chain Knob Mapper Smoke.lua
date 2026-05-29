@@ -4,6 +4,7 @@ local extstate = {}
 local selected_track = { guid = "{TRACK-1}", name = "Track 1" }
 local mock_time = 0
 local midi_event_count = 0
+local set_param_calls = 0
 local fx = {
   { name = "VST: Test FX", guid = "{TARGET}", params = { 0.5, 0.25 } },
 }
@@ -31,7 +32,10 @@ local reaper_mock = {
     return true, string.format("%.0f", (fx[index + 1].params[param + 1] or 0) * 100)
   end,
   TrackFX_GetParamNormalized = function(_, index, param) return fx[index + 1].params[param + 1] or 0 end,
-  TrackFX_SetParamNormalized = function(_, index, param, value) fx[index + 1].params[param + 1] = value end,
+  TrackFX_SetParamNormalized = function(_, index, param, value)
+    set_param_calls = set_param_calls + 1
+    fx[index + 1].params[param + 1] = value
+  end,
   GetProjExtState = function(_, section, key)
     local value = extstate[section .. ":" .. key] or ""
     return value ~= "" and 1 or 0, value
@@ -123,6 +127,9 @@ absolute_mapping.invert = true
 assert_equal(string.format("%.3f", helpers.absoluteCCValueToNormalized(127, absolute_mapping)), "0.250", "absolute invert")
 local curve_mapping = helpers.normalizeSlot({ curve = 2 }, 1)
 assert_equal(string.format("%.3f", helpers.normalizedToMappingOutput(0.5, curve_mapping)), "0.250", "curve shaping")
+set_param_calls = 0
+assert_equal(string.format("%.3f", helpers.displayDeltaToNormalizedDelta(selected_track, 0, 0, 1)), "0.010", "display delta fallback")
+assert_equal(set_param_calls, 0, "display delta conversion does not set parameter")
 helpers.decode_slots("1|1|0.005000|0|{TARGET}|VST: Test FX|0|Param 1")
 local migrated = helpers.encode_slots()
 assert_equal(migrated:match("1|1|1%.000000|0|{TARGET}|VST: Test FX|0|Param 1|relative|twos_complement|0%.000000|1%.000000|1%.000000|0|1") ~= nil, true, "legacy migration")

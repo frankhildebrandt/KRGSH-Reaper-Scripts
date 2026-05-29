@@ -362,21 +362,39 @@ local function formatted_param_number(track, fx, param)
   return tonumber(number)
 end
 
+local function formatted_param_number_at_normalized(track, fx, param, normalized_value)
+  if not reaper.TrackFX_FormatParamValueNormalized then return nil end
+
+  local ok, retval, value = pcall(reaper.TrackFX_FormatParamValueNormalized, track, fx, param, normalized_value, "")
+  if not ok or not retval or not value or value == "" then return nil end
+
+  local number = value:match("[-+]?%d+[%.%,]?%d*")
+  if not number then return nil end
+
+  number = number:gsub(",", ".")
+  return tonumber(number)
+end
+
 local function display_delta_to_normalized_delta(track, fx, param, display_delta)
   local current_normalized = reaper.TrackFX_GetParamNormalized(track, fx, param)
   local current_display = formatted_param_number(track, fx, param)
 
   if current_display then
     local probe_offset = current_normalized <= 0.95 and 0.01 or -0.01
-    reaper.TrackFX_SetParamNormalized(track, fx, param, clamp(current_normalized + probe_offset, 0, 1))
-    local probe_display = formatted_param_number(track, fx, param)
-    reaper.TrackFX_SetParamNormalized(track, fx, param, current_normalized)
+    local probe_display = formatted_param_number_at_normalized(track, fx, param, clamp(current_normalized + probe_offset, 0, 1))
 
     if probe_display and probe_display ~= current_display then
       local display_per_normalized = (probe_display - current_display) / probe_offset
       if display_per_normalized ~= 0 then
         return display_delta / display_per_normalized
       end
+    end
+  end
+
+  if reaper.TrackFX_GetParam then
+    local ok, _, minimum, maximum = pcall(reaper.TrackFX_GetParam, track, fx, param)
+    if ok and minimum and maximum and maximum ~= minimum then
+      return display_delta / (maximum - minimum)
     end
   end
 
@@ -412,21 +430,6 @@ local function normalized_to_mapping_output(value, mapping)
 
   local lo, hi = mapping_bounds(mapping)
   return clamp(lo + ((hi - lo) * value), lo, hi)
-end
-
-local function relative_curve_gain(current_value, mapping)
-  local lo, hi = mapping_bounds(mapping)
-  local span = hi - lo
-  if span <= 0 then return 0 end
-
-  local position = clamp((current_value - lo) / span, 0, 1)
-  local curve = normalize_curve(mapping.curve)
-  if math.abs(curve - 1) < 0.000001 then
-    return 1
-  end
-
-  if position <= 0 then position = 0.001 end
-  return clamp(curve * (position ^ (curve - 1)), 0.05, 8)
 end
 
 local function absoluteCCValueToNormalized(value, mapping)
@@ -633,6 +636,7 @@ local function export_for_tests()
     DEFAULT_RELATIVE_MODE = DEFAULT_RELATIVE_MODE,
     absoluteCCValueToNormalized = absoluteCCValueToNormalized,
     decode_slots = decode_slots,
+    displayDeltaToNormalizedDelta = display_delta_to_normalized_delta,
     encode_slots = encode_slots,
     normalizedToMappingOutput = normalized_to_mapping_output,
     normalizeSlot = normalize_slot,
@@ -691,8 +695,6 @@ local function apply_slot_midi_event(slot, status, cc_value)
   local current_value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
   local display_delta = delta * mapping.sensitivity
   local normalized_delta = display_delta_to_normalized_delta(current_track, fx, param, display_delta)
-  normalized_delta = normalized_delta * relative_curve_gain(current_value, mapping)
-
   local lo, hi = mapping_bounds(mapping)
   local next_value = clamp(current_value + normalized_delta, lo, hi)
   reaper.TrackFX_SetParamNormalized(current_track, fx, param, next_value)
