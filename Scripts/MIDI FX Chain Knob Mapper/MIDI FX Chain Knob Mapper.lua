@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 2.1.1
+-- @version 2.1.2
 -- @author KRGSH
 -- @about
 --   Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.
@@ -718,8 +718,6 @@ local function poll_midi_input()
       local key = table.concat({
         tostring(timestamp),
         tostring(device),
-        tostring(project_pos),
-        tostring(project_loop_count),
         tostring(status),
         tostring(data1),
         tostring(data2),
