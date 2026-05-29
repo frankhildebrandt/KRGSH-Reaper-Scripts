@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 2.0.0
+-- @version 2.0.1
 -- @author KRGSH
 -- @about
 --   Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.
@@ -11,7 +11,7 @@ local CC_FIRST = 16
 local CC_LAST = 23
 local WIDTH = 840
 local HEIGHT = 392
-local MIDI_SCAN_LIMIT = 128
+local MIDI_SCAN_LIMIT = 32
 local MIDI_SEEN_LIMIT = 512
 
 local slots = {}
@@ -24,6 +24,7 @@ local learn_started_at = 0
 local last_dock_state = nil
 local seen_midi = {}
 local seen_midi_order = {}
+local midi_primed = false
 local last_cc = nil
 local last_cc_value = nil
 local last_cc_delta = nil
@@ -304,8 +305,8 @@ local function refresh_track()
 end
 
 local function relative_delta(value)
-  if value > 0 and value < 64 then return value end
-  if value > 64 then return value - 128 end
+  if value > 0 and value < 64 then return 1 end
+  if value > 64 then return -1 end
   return 0
 end
 
@@ -341,24 +342,46 @@ local function poll_midi_input()
   end
 
   midi_api_missing = false
+  local events = {}
   for idx = 0, MIDI_SCAN_LIMIT - 1 do
-    local ok, retval, msg, timestamp, device = pcall(reaper.MIDI_GetRecentInputEvent, idx)
+    local ok, retval, msg, timestamp, device, project_pos, project_loop_count = pcall(reaper.MIDI_GetRecentInputEvent, idx)
     if not ok or not retval or retval == 0 or not msg or #msg < 3 then break end
 
     local status, data1, data2 = msg:byte(1, 3)
     if status and (status & 0xF0) == 0xB0 then
-      local key = tostring(timestamp) .. ":" .. tostring(device) .. ":" .. tostring(status) .. ":" .. tostring(data1) .. ":" .. tostring(data2)
+      local key = table.concat({
+        tostring(timestamp),
+        tostring(device),
+        tostring(project_pos),
+        tostring(project_loop_count),
+        tostring(status),
+        tostring(data1),
+        tostring(data2),
+      }, ":")
       if remember_midi_event(key) then
-        last_cc = data1
-        last_cc_value = data2
-        last_cc_delta = relative_delta(data2)
-        last_cc_slot = data1 >= CC_FIRST and data1 <= CC_LAST and (data1 - CC_FIRST + 1) or nil
-        midi_activity_until = reaper.time_precise and (reaper.time_precise() + 1.0) or 1
-
-        if last_cc_slot then
-          apply_slot_delta(last_cc_slot, last_cc_delta)
-        end
+        events[#events + 1] = { cc = data1, value = data2 }
       end
+    end
+  end
+
+  if not midi_primed then
+    midi_primed = true
+    return
+  end
+
+  for idx = #events, 1, -1 do
+    local event = events[idx]
+    local delta = relative_delta(event.value)
+    local slot = event.cc >= CC_FIRST and event.cc <= CC_LAST and (event.cc - CC_FIRST + 1) or nil
+
+    last_cc = event.cc
+    last_cc_value = event.value
+    last_cc_delta = delta
+    last_cc_slot = slot
+    midi_activity_until = reaper.time_precise and (reaper.time_precise() + 1.0) or 1
+
+    if slot then
+      apply_slot_delta(slot, delta)
     end
   end
 end

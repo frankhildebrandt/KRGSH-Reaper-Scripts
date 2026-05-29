@@ -3,7 +3,7 @@ local script_dir = (... and (...):match("^(.*[/\\])")) or "Scripts/MIDI FX Chain
 local extstate = {}
 local selected_track = { guid = "{TRACK-1}", name = "Track 1" }
 local mock_time = 0
-local midi_event_served = false
+local midi_event_count = 0
 local fx = {
   { name = "VST: Test FX", guid = "{TARGET}", params = { 0.5, 0.25 } },
 }
@@ -38,9 +38,9 @@ local reaper_mock = {
   end,
   time_precise = function() return mock_time end,
   MIDI_GetRecentInputEvent = function(index)
-    if index == 0 and not midi_event_served then
-      midi_event_served = true
-      return 1, string.char(0xB0, 16, 2), 1, 0, 0, 0
+    if index == 0 and midi_event_count < 2 then
+      midi_event_count = midi_event_count + 1
+      return 1, string.char(0xB0, 16, 2), midi_event_count, 0, 0, 0
     end
     return 0, "", 0, 0, 0, 0
   end,
@@ -68,7 +68,7 @@ local gfx_mock = {
   getchar = function()
     if gfx_mock.after_first_loop then return -1 end
     gfx_mock.after_first_loop = true
-    fx[2].params[2] = 0.75
+    fx[1].params[2] = 0.75
     return 0
   end,
 }
@@ -95,9 +95,10 @@ end
 chunk()
 
 assert_equal(type(extstate), "table", "extstate table")
-assert_equal(string.format("%.2f", fx[1].params[1]), "0.52", "slot 1 target nudge")
+assert_equal(string.format("%.2f", fx[1].params[1]), "0.51", "slot 1 target nudge")
 
 gfx_mock.after_first_loop = false
+midi_event_count = 2
 gfx_mock.mouse_x = 590
 gfx_mock.mouse_y = 120
 gfx_mock.mouse_cap = 1
