@@ -184,5 +184,6 @@ mini plus knobs in relative mode:
 - The mapper window is dockable and shows the current mapped parameter values.
   Incoming knob movement is applied directly to the mapped target parameter.
 
-Set the MPK mini plus knobs to relative `1/127` mode. Values 1 through 63 nudge
-the mapped parameter upward, and values 65 through 127 nudge it downward.
+Set the MPK mini plus knobs to relative mode. The mapper recognizes common
+relative encoder pairs including `1/127`, `63/65`, and `15/16`; middle-range
+absolute-looking values are ignored instead of being treated as large jumps.

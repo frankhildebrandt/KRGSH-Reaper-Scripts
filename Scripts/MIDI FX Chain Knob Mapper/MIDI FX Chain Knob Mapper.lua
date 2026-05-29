@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 2.0.1
+-- @version 2.0.2
 -- @author KRGSH
 -- @about
 --   Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.
@@ -305,8 +305,16 @@ local function refresh_track()
 end
 
 local function relative_delta(value)
-  if value > 0 and value < 64 then return 1 end
-  if value > 64 then return -1 end
+  -- Common relative encoder modes:
+  -- 1/127, 63/65 binary offset, and 15/16 signed nibble.
+  if value == 1 or value == 16 or value == 65 then return 1 end
+  if value == 127 or value == 15 or value == 63 then return -1 end
+
+  -- Treat small two's-complement acceleration values as single detents.
+  if value >= 2 and value <= 8 then return 1 end
+  if value >= 120 and value <= 126 then return -1 end
+
+  -- Values in the middle usually indicate absolute CC or an unsupported mode.
   return 0
 end
 
