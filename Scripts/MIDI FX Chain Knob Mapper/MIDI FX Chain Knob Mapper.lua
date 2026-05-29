@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 2.1.0
+-- @version 2.1.1
 -- @author KRGSH
 -- @about
 --   Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.
