@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 2.0.4
+-- @version 2.0.5
 -- @author KRGSH
 -- @about
 --   Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.
@@ -68,6 +68,19 @@ local function default_slot(slot)
   }
 end
 
+local function normalize_sensitivity(value)
+  value = tonumber(value) or DEFAULT_SENSITIVITY
+
+  -- Versions before 2.0.4 stored normalized-unit sensitivities such as
+  -- 0.005. Sensitivity is now expressed in displayed parameter units, so those
+  -- legacy values would look like "nothing happens" on 0-100 parameters.
+  if value > 0 and value <= 0.05 then
+    return DEFAULT_SENSITIVITY
+  end
+
+  return clamp(value, 0.01, 100)
+end
+
 local function reset_slots()
   slots = {}
   for slot = 1, SLOT_COUNT do
@@ -123,7 +136,7 @@ local function decode_slots(value)
       slots[slot] = {
         slot = slot,
         enabled = fields[2] == "1",
-        sensitivity = tonumber(fields[3]) or DEFAULT_SENSITIVITY,
+        sensitivity = normalize_sensitivity(fields[3]),
         target_fx_index = tonumber(fields[4]) or -1,
         target_fx_guid = unesc(fields[5]),
         target_fx_name = unesc(fields[6]),
@@ -273,6 +286,7 @@ end
 local function assign_slot(slot, fx, param)
   local mapping = slots[slot] or default_slot(slot)
   mapping.enabled = true
+  mapping.sensitivity = normalize_sensitivity(mapping.sensitivity)
   mapping.target_fx_index = fx
   mapping.target_fx_guid = fx_guid(current_track, fx)
   mapping.target_fx_name = fx_name(current_track, fx)
@@ -447,6 +461,7 @@ local function apply_slot_delta(slot, delta)
   if not current_track or delta == 0 then return end
 
   local mapping = slots[slot]
+  mapping.sensitivity = normalize_sensitivity(mapping.sensitivity)
   local fx, param = resolve_target(current_track, mapping)
   if fx >= 0 and param >= 0 and param < reaper.TrackFX_GetNumParams(current_track, fx) then
     local current_value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
@@ -570,7 +585,8 @@ end
 
 local function adjust_sensitivity(slot, amount)
   local mapping = slots[slot] or default_slot(slot)
-  mapping.sensitivity = clamp((mapping.sensitivity or DEFAULT_SENSITIVITY) + amount, 0.01, 100)
+  mapping.sensitivity = normalize_sensitivity(mapping.sensitivity) + amount
+  mapping.sensitivity = clamp(mapping.sensitivity, 0.01, 100)
   slots[slot] = mapping
   save_slots()
 end

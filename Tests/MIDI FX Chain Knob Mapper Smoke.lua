@@ -9,7 +9,7 @@ local fx = {
 }
 
 extstate["KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER:track:{TRACK-1}"] =
-  "1|1|1.000000|0|{TARGET}|VST: Test FX|0|Param 1"
+  "1|1|0.005000|0|{TARGET}|VST: Test FX|0|Param 1"
 
 local function assert_equal(actual, expected, label)
   if actual ~= expected then
