@@ -6,6 +6,8 @@ by KRGSH:
 - `MIDI Pitch Bend Remover`: removes incoming Pitch Bend messages.
 - `MIDI Scale Helper`: maps MIDI notes to a selected scale.
 - `MIDI Sustain Helper`: adds a simple sustain-pedal helper for piano playing.
+- `MIDI FX Chain Knob Mapper`: maps 8 relative MIDI knobs to parameters in the
+  selected track's FX chain.
 - `Loop Composer`: provides ReaScript actions for fixed-length loop-block
   recording, overdubbing, progression, and navigation.
 
@@ -166,3 +168,19 @@ Bend, program changes, and other MIDI messages pass through unchanged.
 
 In helper modes, incoming physical CC64 pedal messages still update the helper
 state. Other MIDI messages pass through unchanged.
+
+### MIDI FX Chain Knob Mapper
+
+`MIDI FX Chain Knob Mapper` is a hybrid JSFX and ReaScript controller for the
+Akai MPK mini plus knobs in relative mode:
+
+- The JSFX receives CC16 through CC23, shows an 8-knob UI in the FX chain, and
+  passes all MIDI through unchanged.
+- The companion `MIDI FX Chain Knob Mapper` ReaScript opens the assignment UI,
+  inserts the mapper JSFX on the selected track if needed, and maps each knob to
+  one parameter in that track's FX chain.
+- Click an FX field to choose the target FX, then click the parameter field to
+  choose the target parameter. Use `-` and `+` to adjust per-knob sensitivity.
+
+Set the MPK mini plus knobs to relative `1/127` mode. Values 1 through 63 nudge
+the mapped parameter upward, and values 65 through 127 nudge it downward.
