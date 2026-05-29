@@ -31,7 +31,13 @@ local reaper_mock = {
   TrackFX_GetParam = function(_, index, param) return fx[index + 1].params[param + 1] or 0 end,
   TrackFX_SetParam = function(_, index, param, value) fx[index + 1].params[param + 1] = value end,
   TrackFX_GetParamNormalized = function(_, index, param) return fx[index + 1].params[param + 1] or 0 end,
-  TrackFX_SetParamNormalized = function(_, index, param, value) fx[index + 1].params[param + 1] = value end,
+  TrackFX_SetParamNormalized = function(_, index, param, value)
+    if index == 0 and param >= 24 then
+      fx[index + 1].params[param + 1] = 0.0001 + value * (0.05 - 0.0001)
+    else
+      fx[index + 1].params[param + 1] = value
+    end
+  end,
   GetProjExtState = function(_, section, key)
     local value = extstate[section .. ":" .. key] or ""
     return value ~= "" and 1 or 0, value

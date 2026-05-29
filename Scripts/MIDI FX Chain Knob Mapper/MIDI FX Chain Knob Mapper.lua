@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 1.1.0
+-- @version 1.1.1
 -- @author KRGSH
 -- @about
 --   Assigns 8 relative MIDI knobs from the companion JSFX to parameters in the selected track FX chain.
@@ -154,6 +154,19 @@ local function find_mapper_fx(track)
   return -1
 end
 
+local function mapper_fx_indices(track)
+  local indices = {}
+  if not track then return indices end
+
+  for fx = 0, reaper.TrackFX_GetCount(track) - 1 do
+    if fx_name(track, fx):find(MAPPER_NAME, 1, true) then
+      indices[#indices + 1] = fx
+    end
+  end
+
+  return indices
+end
+
 local function ensure_mapper_fx(track)
   local fx = find_mapper_fx(track)
   if fx >= 0 then return fx end
@@ -306,6 +319,18 @@ local function set_mapper_param(param, value)
   end
 end
 
+local function set_all_mapper_status_params(param, value)
+  if not current_track then return end
+
+  for _, fx in ipairs(mapper_fx_indices(current_track)) do
+    reaper.TrackFX_SetParamNormalized(current_track, fx, param, clamp(value, 0, 1))
+  end
+end
+
+local function sensitivity_to_normalized(value)
+  return clamp((value - 0.0001) / (0.05 - 0.0001), 0, 1)
+end
+
 local function update_mapper_status()
   if not current_track or mapper_fx < 0 then return end
 
@@ -318,9 +343,9 @@ local function update_mapper_status()
       value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
     end
 
-    set_mapper_param(8 + slot - 1, mapped and 1 or 0)
-    set_mapper_param(16 + slot - 1, value)
-    set_mapper_param(24 + slot - 1, mapping.sensitivity or DEFAULT_SENSITIVITY)
+    set_all_mapper_status_params(8 + slot - 1, mapped and 1 or 0)
+    set_all_mapper_status_params(16 + slot - 1, value)
+    set_all_mapper_status_params(24 + slot - 1, sensitivity_to_normalized(mapping.sensitivity or DEFAULT_SENSITIVITY))
   end
 end
 

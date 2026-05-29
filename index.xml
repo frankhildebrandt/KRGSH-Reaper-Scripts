@@ -41,7 +41,7 @@ Fixed JSFX memory layout corruption.]]></description>
       <metadata>
         <description><![CDATA[Assigns the companion MIDI FX Chain Knob Mapper JSFX knobs to parameters in the selected track FX chain.]]></description>
       </metadata>
-      <version name="1.1.0" author="KRGSH" time="2026-05-29T00:00:00Z">
+      <version name="1.1.1" author="KRGSH" time="2026-05-29T00:00:00Z">
         <source file="MIDI FX Chain Knob Mapper.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/MIDI%20FX%20Chain%20Knob%20Mapper/MIDI%20FX%20Chain%20Knob%20Mapper.lua</source>
       </version>
     </reapack>
