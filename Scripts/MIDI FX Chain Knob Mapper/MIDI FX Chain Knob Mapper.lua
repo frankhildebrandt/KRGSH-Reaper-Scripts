@@ -1,11 +1,12 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 2.0.3
+-- @version 2.0.4
 -- @author KRGSH
 -- @about
 --   Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.
 
 local SECTION = "KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER"
-local DEFAULT_SENSITIVITY = 0.005
+local DEFAULT_SENSITIVITY = 1
+local DEFAULT_DISPLAY_RANGE = 100
 local SLOT_COUNT = 8
 local CC_FIRST = 16
 local CC_LAST = 23
@@ -222,6 +223,40 @@ local function param_value_label(track, fx, param)
   return string.format("%.1f%%", reaper.TrackFX_GetParamNormalized(track, fx, param) * 100)
 end
 
+local function formatted_param_number(track, fx, param)
+  if not reaper.TrackFX_GetFormattedParamValue then return nil end
+
+  local ok, value = reaper.TrackFX_GetFormattedParamValue(track, fx, param, "")
+  if not ok or not value or value == "" then return nil end
+
+  local number = value:match("[-+]?%d+[%.%,]?%d*")
+  if not number then return nil end
+
+  number = number:gsub(",", ".")
+  return tonumber(number)
+end
+
+local function display_delta_to_normalized_delta(track, fx, param, display_delta)
+  local current_normalized = reaper.TrackFX_GetParamNormalized(track, fx, param)
+  local current_display = formatted_param_number(track, fx, param)
+
+  if current_display then
+    local probe_offset = current_normalized <= 0.95 and 0.01 or -0.01
+    reaper.TrackFX_SetParamNormalized(track, fx, param, clamp(current_normalized + probe_offset, 0, 1))
+    local probe_display = formatted_param_number(track, fx, param)
+    reaper.TrackFX_SetParamNormalized(track, fx, param, current_normalized)
+
+    if probe_display and probe_display ~= current_display then
+      local display_per_normalized = (probe_display - current_display) / probe_offset
+      if display_per_normalized ~= 0 then
+        return display_delta / display_per_normalized
+      end
+    end
+  end
+
+  return display_delta / DEFAULT_DISPLAY_RANGE
+end
+
 local function capture_parameter_snapshot(track)
   local snapshot = {}
   if not track then return snapshot end
@@ -415,7 +450,9 @@ local function apply_slot_delta(slot, delta)
   local fx, param = resolve_target(current_track, mapping)
   if fx >= 0 and param >= 0 and param < reaper.TrackFX_GetNumParams(current_track, fx) then
     local current_value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
-    local next_value = clamp(current_value + delta * (mapping.sensitivity or DEFAULT_SENSITIVITY), 0, 1)
+    local display_delta = delta * (mapping.sensitivity or DEFAULT_SENSITIVITY)
+    local normalized_delta = display_delta_to_normalized_delta(current_track, fx, param, display_delta)
+    local next_value = clamp(current_value + normalized_delta, 0, 1)
     reaper.TrackFX_SetParamNormalized(current_track, fx, param, next_value)
   end
 end
@@ -533,7 +570,7 @@ end
 
 local function adjust_sensitivity(slot, amount)
   local mapping = slots[slot] or default_slot(slot)
-  mapping.sensitivity = clamp((mapping.sensitivity or DEFAULT_SENSITIVITY) + amount, 0.0001, 0.05)
+  mapping.sensitivity = clamp((mapping.sensitivity or DEFAULT_SENSITIVITY) + amount, 0.01, 100)
   slots[slot] = mapping
   save_slots()
 end

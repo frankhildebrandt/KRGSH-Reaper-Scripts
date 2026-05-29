@@ -180,7 +180,7 @@ mini plus knobs in relative mode:
   choose the target parameter.
 - Click `Learn`, move one FX parameter in the selected track's FX chain, and the
   slot assigns itself to that changed parameter. Use `-` and `+` to adjust
-  per-knob sensitivity.
+  per-knob sensitivity in displayed parameter units.
 - The mapper window is dockable and shows the current mapped parameter values.
   Incoming knob movement is applied directly to the mapped target parameter.
 

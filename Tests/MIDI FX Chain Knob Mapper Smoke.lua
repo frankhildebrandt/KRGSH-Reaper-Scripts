@@ -9,7 +9,7 @@ local fx = {
 }
 
 extstate["KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER:track:{TRACK-1}"] =
-  "1|1|0.010000|0|{TARGET}|VST: Test FX|0|Param 1"
+  "1|1|1.000000|0|{TARGET}|VST: Test FX|0|Param 1"
 
 local function assert_equal(actual, expected, label)
   if actual ~= expected then
@@ -27,6 +27,9 @@ local reaper_mock = {
   TrackFX_GetFXGUID = function(_, index) return fx[index + 1].guid end,
   TrackFX_GetNumParams = function(_, index) return #fx[index + 1].params end,
   TrackFX_GetParamName = function(_, _, param) return true, "Param " .. tostring(param + 1) end,
+  TrackFX_GetFormattedParamValue = function(_, index, param)
+    return true, string.format("%.0f", (fx[index + 1].params[param + 1] or 0) * 100)
+  end,
   TrackFX_GetParamNormalized = function(_, index, param) return fx[index + 1].params[param + 1] or 0 end,
   TrackFX_SetParamNormalized = function(_, index, param, value) fx[index + 1].params[param + 1] = value end,
   GetProjExtState = function(_, section, key)
@@ -123,6 +126,6 @@ gfx_mock.mouse_y = 120
 gfx_mock.mouse_cap = 1
 fx[1].params[2] = 0.25
 chunk()
-assert_equal(extstate["KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER:track:{TRACK-1}"]:match("2|1|0%.005000|0|{TARGET}|VST: Test FX|1|Param 2") ~= nil, true, "slot 2 learned target")
+assert_equal(extstate["KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER:track:{TRACK-1}"]:match("2|1|1%.000000|0|{TARGET}|VST: Test FX|1|Param 2") ~= nil, true, "slot 2 learned target")
 
 print("MIDI FX Chain Knob Mapper smoke tests passed")
