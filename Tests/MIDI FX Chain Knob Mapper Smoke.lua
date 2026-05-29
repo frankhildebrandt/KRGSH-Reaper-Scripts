@@ -56,6 +56,12 @@ local gfx_mock = {
   w = 760,
   h = 392,
   init = function() end,
+  dock = function(state)
+    if state and state >= 0 then
+      gfx_mock.dock_state = state
+    end
+    return gfx_mock.dock_state or 0
+  end,
   setfont = function() end,
   set = function() end,
   rect = function() end,
@@ -96,7 +102,7 @@ assert_equal(string.format("%.2f", fx[2].params[1]), "0.52", "slot 1 target nudg
 assert_equal(fx[1].params[9], 1, "slot 1 mapped status")
 
 gfx_mock.after_first_loop = false
-gfx_mock.mouse_x = 565
+gfx_mock.mouse_x = 590
 gfx_mock.mouse_y = 120
 gfx_mock.mouse_cap = 1
 fx[2].params[2] = 0.25

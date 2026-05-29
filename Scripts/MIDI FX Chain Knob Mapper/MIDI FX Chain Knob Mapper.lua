@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 1.1.1
+-- @version 1.2.0
 -- @author KRGSH
 -- @about
 --   Assigns 8 relative MIDI knobs from the companion JSFX to parameters in the selected track FX chain.
@@ -8,7 +8,7 @@ local SECTION = "KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER"
 local MAPPER_NAME = "MIDI FX Chain Knob Mapper"
 local DEFAULT_SENSITIVITY = 0.005
 local SLOT_COUNT = 8
-local WIDTH = 760
+local WIDTH = 840
 local HEIGHT = 392
 
 local slots = {}
@@ -19,6 +19,7 @@ local mouse_was_down = false
 local learn_slot = nil
 local learn_snapshot = nil
 local learn_started_at = 0
+local last_dock_state = nil
 
 local function clamp(value, lo, hi)
   if value < lo then return lo end
@@ -64,6 +65,19 @@ end
 
 local function ext_key(track_guid)
   return "track:" .. tostring(track_guid or "")
+end
+
+local function dock_state()
+  local ok, value = reaper.GetProjExtState(0, SECTION, "dock_state")
+  return ok == 1 and tonumber(value) or 0
+end
+
+local function save_dock_state()
+  local state = gfx.dock(-1)
+  if state ~= last_dock_state then
+    last_dock_state = state
+    reaper.SetProjExtState(0, SECTION, "dock_state", tostring(state))
+  end
 end
 
 local function encode_slots()
@@ -220,6 +234,19 @@ local function param_name(track, fx, param)
   return name or ("Param " .. tostring(param + 1))
 end
 
+local function param_value_label(track, fx, param)
+  if not track or fx < 0 or param < 0 then return "--" end
+
+  if reaper.TrackFX_GetFormattedParamValue then
+    local ok, value = reaper.TrackFX_GetFormattedParamValue(track, fx, param, "")
+    if ok and value and value ~= "" then
+      return value
+    end
+  end
+
+  return string.format("%.1f%%", reaper.TrackFX_GetParamNormalized(track, fx, param) * 100)
+end
+
 local function capture_parameter_snapshot(track)
   local snapshot = {}
   if not track then return snapshot end
@@ -313,12 +340,6 @@ local function refresh_track()
   end
 end
 
-local function set_mapper_param(param, value)
-  if current_track and mapper_fx >= 0 then
-    reaper.TrackFX_SetParam(current_track, mapper_fx, param, value)
-  end
-end
-
 local function set_all_mapper_status_params(param, value)
   if not current_track then return end
 
@@ -352,17 +373,19 @@ end
 local function poll_mapper_deltas()
   if not current_track or mapper_fx < 0 then return end
 
-  for slot = 1, SLOT_COUNT do
-    local delta = select(1, reaper.TrackFX_GetParam(current_track, mapper_fx, slot - 1))
-    if math.abs(delta) >= 0.5 then
-      set_mapper_param(slot - 1, 0)
+  for _, source_fx in ipairs(mapper_fx_indices(current_track)) do
+    for slot = 1, SLOT_COUNT do
+      local delta = select(1, reaper.TrackFX_GetParam(current_track, source_fx, slot - 1))
+      if math.abs(delta) >= 0.5 then
+        reaper.TrackFX_SetParam(current_track, source_fx, slot - 1, 0)
 
-      local mapping = slots[slot]
-      local fx, param = resolve_target(current_track, mapping)
-      if fx >= 0 and param >= 0 and param < reaper.TrackFX_GetNumParams(current_track, fx) then
-        local current_value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
-        local next_value = clamp(current_value + delta * (mapping.sensitivity or DEFAULT_SENSITIVITY), 0, 1)
-        reaper.TrackFX_SetParamNormalized(current_track, fx, param, next_value)
+        local mapping = slots[slot]
+        local fx, param = resolve_target(current_track, mapping)
+        if fx >= 0 and param >= 0 and param < reaper.TrackFX_GetNumParams(current_track, fx) then
+          local current_value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
+          local next_value = clamp(current_value + delta * (mapping.sensitivity or DEFAULT_SENSITIVITY), 0, 1)
+          reaper.TrackFX_SetParamNormalized(current_track, fx, param, next_value)
+        end
       end
     end
   end
@@ -467,6 +490,7 @@ local function draw_ui()
   gfx.setfont(1, "Arial", 18)
   draw_text(18, 14, "MIDI FX Chain Knob Mapper", 0.92, 0.92, 0.88)
   gfx.setfont(2, "Arial", 13)
+  draw_button(WIDTH - 88, 14, 70, 24, gfx.dock(-1) == 0 and "Dock" or "Float", gfx.dock(-1) ~= 0)
 
   if not current_track then
     draw_text(18, 46, "Select a track to create or edit its 8 knob mappings.", 0.70, 0.73, 0.72)
@@ -493,13 +517,15 @@ local function draw_ui()
 
     local fx_label = mapped and fx_name(current_track, fx) or (mapping.enabled and "Unresolved FX" or "Choose FX")
     local param_label = mapped and param_name(current_track, fx, param) or "Choose parameter"
-    draw_button(126, y - 1, 210, 24, fx_label, mapped)
-    draw_button(344, y - 1, 210, 24, param_label, mapped)
-    draw_button(562, y - 1, 72, 24, learn_slot == slot and "Learning" or "Learn", learn_slot == slot)
+    local value_label = mapped and param_value_label(current_track, fx, param) or "--"
+    draw_button(126, y - 1, 190, 24, fx_label, mapped)
+    draw_button(324, y - 1, 170, 24, param_label, mapped)
+    draw_button(502, y - 1, 78, 24, value_label, mapped)
+    draw_button(588, y - 1, 72, 24, learn_slot == slot and "Learning" or "Learn", learn_slot == slot)
 
-    draw_button(646, y - 1, 28, 24, "-", false)
-    draw_text(682, y + 3, string.format("%.3f", mapping.sensitivity or DEFAULT_SENSITIVITY), 0.72, 0.75, 0.74)
-    draw_button(724, y - 1, 28, 24, "+", false)
+    draw_button(672, y - 1, 28, 24, "-", false)
+    draw_text(708, y + 3, string.format("%.3f", mapping.sensitivity or DEFAULT_SENSITIVITY), 0.72, 0.75, 0.74)
+    draw_button(784, y - 1, 28, 24, "+", false)
 
     y = y + 36
   end
@@ -509,19 +535,31 @@ local function handle_mouse()
   local down = (gfx.mouse_cap & 1) == 1
   local clicked = down and not mouse_was_down
   mouse_was_down = down
-  if not clicked or not current_track then return end
+  if not clicked then return end
+
+  if point_in_rect(WIDTH - 88, 14, 70, 24) then
+    if gfx.dock(-1) == 0 then
+      gfx.dock(1)
+    else
+      gfx.dock(0)
+    end
+    save_dock_state()
+    return
+  end
+
+  if not current_track then return end
 
   local y = 82
   for slot = 1, SLOT_COUNT do
-    if point_in_rect(126, y - 1, 210, 24) then
+    if point_in_rect(126, y - 1, 190, 24) then
       choose_fx(slot)
       return
     end
-    if point_in_rect(344, y - 1, 210, 24) then
+    if point_in_rect(324, y - 1, 170, 24) then
       choose_param(slot)
       return
     end
-    if point_in_rect(562, y - 1, 72, 24) then
+    if point_in_rect(588, y - 1, 72, 24) then
       if learn_slot == slot then
         cancel_learn()
       else
@@ -529,11 +567,11 @@ local function handle_mouse()
       end
       return
     end
-    if point_in_rect(646, y - 1, 28, 24) then
+    if point_in_rect(672, y - 1, 28, 24) then
       adjust_sensitivity(slot, -0.001)
       return
     end
-    if point_in_rect(724, y - 1, 28, 24) then
+    if point_in_rect(784, y - 1, 28, 24) then
       adjust_sensitivity(slot, 0.001)
       return
     end
@@ -548,6 +586,7 @@ local function loop()
   update_mapper_status()
   draw_ui()
   handle_mouse()
+  save_dock_state()
 
   gfx.update()
   if gfx.getchar() >= 0 then
@@ -556,6 +595,7 @@ local function loop()
 end
 
 reset_slots()
-gfx.init("MIDI FX Chain Knob Mapper", WIDTH, HEIGHT)
+last_dock_state = dock_state()
+gfx.init("MIDI FX Chain Knob Mapper", WIDTH, HEIGHT, last_dock_state)
 gfx.setfont(1, "Arial", 14)
 loop()
