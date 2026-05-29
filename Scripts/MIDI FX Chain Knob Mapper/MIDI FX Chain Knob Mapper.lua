@@ -1,5 +1,5 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 2.1.3
+-- @version 2.1.4
 -- @author KRGSH
 -- @about
 --   Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.
@@ -775,8 +775,10 @@ local function poll_midi_input()
 
     local status, data1, data2 = msg:byte(1, 3)
     if status and (status & 0xF0) == 0xB0 then
+      -- retval is REAPER's stable recent-event sequence number. The timestamp
+      -- is relative to the current play position, so it can drift between polls.
       local key = table.concat({
-        tostring(timestamp),
+        tostring(retval),
         tostring(device),
         tostring(status),
         tostring(data1),

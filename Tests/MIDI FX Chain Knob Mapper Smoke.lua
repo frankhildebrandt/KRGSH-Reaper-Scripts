@@ -4,7 +4,7 @@ local extstate = {}
 local selected_track = { guid = "{TRACK-1}", name = "Track 1" }
 local mock_time = 0
 local midi_event_count = 0
-local midi_repeat_with_moving_project_pos = false
+local midi_repeat_with_moving_time = false
 local set_param_calls = 0
 local fx = {
   { name = "VST: Test FX", guid = "{TARGET}", params = { 0.5, 0.25 } },
@@ -51,9 +51,10 @@ local reaper_mock = {
   MIDI_GetRecentInputEvent = function(index)
     if index == 0 and midi_event_count < 2 then
       midi_event_count = midi_event_count + 1
-      local timestamp = midi_repeat_with_moving_project_pos and 100 or midi_event_count
-      local project_pos = midi_repeat_with_moving_project_pos and midi_event_count or 0
-      return 1, string.char(0xB0, 16, 2), timestamp, 0, project_pos, 0
+      local sequence = midi_repeat_with_moving_time and 100 or midi_event_count
+      local timestamp = midi_repeat_with_moving_time and (midi_event_count * -128) or midi_event_count
+      local project_pos = midi_repeat_with_moving_time and midi_event_count or 0
+      return sequence, string.char(0xB0, 16, 2), timestamp, 0, project_pos, 0
     end
     return 0, "", 0, 0, 0, 0
   end,
@@ -162,12 +163,12 @@ fx[1].params[2] = 0.25
 chunk()
 assert_equal(extstate["KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER:track:{TRACK-1}"]:match("2|1|1%.000000|0|{TARGET}|VST: Test FX|1|Param 2") ~= nil, true, "slot 2 learned target")
 
-midi_repeat_with_moving_project_pos = true
+midi_repeat_with_moving_time = true
 midi_event_count = 0
 gfx_mock.after_first_loop = false
 gfx_mock.mouse_cap = 0
 fx[1].params[1] = 0.50
 chunk()
-assert_equal(string.format("%.2f", fx[1].params[1]), "0.50", "moving project position does not replay relative event")
+assert_equal(string.format("%.2f", fx[1].params[1]), "0.50", "moving timestamp does not replay same relative event sequence")
 
 print("MIDI FX Chain Knob Mapper smoke tests passed")
