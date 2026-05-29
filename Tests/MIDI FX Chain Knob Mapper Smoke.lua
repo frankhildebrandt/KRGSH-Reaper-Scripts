@@ -50,7 +50,8 @@ local reaper_mock = {
   defer = function(fn) fn() end,
 }
 
-local gfx_mock = {
+local gfx_mock
+gfx_mock = {
   mouse_x = 0,
   mouse_y = 0,
   mouse_cap = 0,
@@ -108,6 +109,23 @@ assert_equal(helpers.relativeCCValueToDelta(65), -63, "relative 65")
 assert_equal(helpers.relativeCCValueToDelta(126), -2, "relative 126")
 assert_equal(helpers.relativeCCValueToDelta(127), -1, "relative 127")
 assert_equal(helpers.relativeCCValueToDelta(0), 0, "relative 0")
+assert_equal(helpers.relativeCCValueToDelta(65, "binary_offset"), 1, "binary offset +1")
+assert_equal(helpers.relativeCCValueToDelta(63, "binary_offset"), -1, "binary offset -1")
+assert_equal(helpers.relativeCCValueToDelta(65, "signed_bit"), -1, "signed bit -1")
+assert_equal(helpers.relativeCCValueToDelta(1, "inc_dec_1_127"), 1, "inc/dec 1/127 +1")
+assert_equal(helpers.relativeCCValueToDelta(127, "inc_dec_1_127"), -1, "inc/dec 1/127 -1")
+assert_equal(helpers.relativeCCValueToDelta(65, "inc_dec_63_65"), 1, "inc/dec 63/65 +1")
+assert_equal(helpers.relativeCCValueToDelta(63, "inc_dec_63_65"), -1, "inc/dec 63/65 -1")
+
+local absolute_mapping = helpers.normalizeSlot({ input_mode = "absolute", min = 0.25, max = 0.75 }, 1)
+assert_equal(string.format("%.3f", helpers.absoluteCCValueToNormalized(127, absolute_mapping)), "0.750", "absolute max")
+absolute_mapping.invert = true
+assert_equal(string.format("%.3f", helpers.absoluteCCValueToNormalized(127, absolute_mapping)), "0.250", "absolute invert")
+local curve_mapping = helpers.normalizeSlot({ curve = 2 }, 1)
+assert_equal(string.format("%.3f", helpers.normalizedToMappingOutput(0.5, curve_mapping)), "0.250", "curve shaping")
+helpers.decode_slots("1|1|0.005000|0|{TARGET}|VST: Test FX|0|Param 1")
+local migrated = helpers.encode_slots()
+assert_equal(migrated:match("1|1|1%.000000|0|{TARGET}|VST: Test FX|0|Param 1|relative|twos_complement|0%.000000|1%.000000|1%.000000|0|1") ~= nil, true, "legacy migration")
 
 env.KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER_TEST = nil
 chunk, err = loadfile(script_dir .. "MIDI FX Chain Knob Mapper.lua", "t", env)
@@ -122,7 +140,7 @@ assert_equal(string.format("%.2f", fx[1].params[1]), "0.52", "slot 1 target nudg
 gfx_mock.after_first_loop = false
 midi_event_count = 2
 gfx_mock.mouse_x = 590
-gfx_mock.mouse_y = 120
+gfx_mock.mouse_y = 132
 gfx_mock.mouse_cap = 1
 fx[1].params[2] = 0.25
 chunk()

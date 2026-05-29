@@ -6,8 +6,8 @@ by KRGSH:
 - `MIDI Pitch Bend Remover`: removes incoming Pitch Bend messages.
 - `MIDI Scale Helper`: maps MIDI notes to a selected scale.
 - `MIDI Sustain Helper`: adds a simple sustain-pedal helper for piano playing.
-- `MIDI FX Chain Knob Mapper`: maps 8 relative MIDI knobs to parameters in the
-  selected track's FX chain.
+- `MIDI FX Chain Knob Mapper`: maps 8 absolute or relative MIDI knobs to
+  parameters in the selected track's FX chain.
 - `Loop Composer`: provides ReaScript actions for fixed-length loop-block
   recording, overdubbing, progression, and navigation.
 
@@ -171,20 +171,29 @@ state. Other MIDI messages pass through unchanged.
 
 ### MIDI FX Chain Knob Mapper
 
-`MIDI FX Chain Knob Mapper` is a dockable ReaScript controller for the Akai MPK
-mini plus knobs in relative mode:
+`MIDI FX Chain Knob Mapper` is a dockable ReaScript controller for MIDI CC16
+through CC23 knobs, including absolute controls and common relative encoder
+modes:
 
 - The script watches global recent MIDI CC16 through CC23 and maps each knob to
   one parameter in the selected track's FX chain. No mapper JSFX is required.
 - Click an FX field to choose the target FX, then click the parameter field to
   choose the target parameter.
 - Click `Learn`, move one FX parameter in the selected track's FX chain, and the
-  slot assigns itself to that changed parameter. Use `-` and `+` to adjust
-  per-knob sensitivity in displayed parameter units.
+  slot assigns itself to that changed parameter.
+- Each mapping can be collapsed for small docked windows. Expand it to choose
+  absolute or relative input, the relative encoder mode, min/max output bounds,
+  curve amount, and invert.
+- Use `-` and `+` to adjust per-knob factor/sensitivity in displayed parameter
+  units. Click the factor, min, max, or curve fields to type exact values.
+- The curve editor shows the current response curve and can be dragged to adjust
+  the curve amount.
 - The mapper window is dockable and shows the current mapped parameter values.
   Incoming knob movement is applied directly to the mapped target parameter.
 
-Set the MPK mini plus knobs to relative mode. CC values are decoded as signed
-two's-complement deltas: `1..63` increase by that amount, `65..127` decrease by
-`63..1`, and `0` or `64` are treated as no movement. The MPK mini plus `1/127`
-case therefore works as `+1` and `-1`.
+The default relative mode is signed two's-complement, matching the previous MPK
+mini plus behavior: `1..63` increase by that amount, `65..127` decrease by
+`63..1`, and `0` or `64` are treated as no movement. Other relative modes are
+available for binary offset, signed bit, inc/dec `1/127`, and inc/dec `63/65`
+encoders. Absolute mode maps CC values `0..127` into the configured min/max
+range, then applies invert and curve shaping.
