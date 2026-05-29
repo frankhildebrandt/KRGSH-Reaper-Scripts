@@ -1,25 +1,35 @@
 -- @description MIDI FX Chain Knob Mapper
--- @version 1.2.1
+-- @version 2.0.0
 -- @author KRGSH
 -- @about
---   Assigns 8 relative MIDI knobs from the companion JSFX to parameters in the selected track FX chain.
+--   Maps global recent MIDI CC16-CC23 input directly to parameters in the selected track FX chain.
 
 local SECTION = "KRGSH_MIDI_FX_CHAIN_KNOB_MAPPER"
-local MAPPER_NAME = "MIDI FX Chain Knob Mapper"
 local DEFAULT_SENSITIVITY = 0.005
 local SLOT_COUNT = 8
+local CC_FIRST = 16
+local CC_LAST = 23
 local WIDTH = 840
 local HEIGHT = 392
+local MIDI_SCAN_LIMIT = 128
+local MIDI_SEEN_LIMIT = 512
 
 local slots = {}
 local current_track
 local current_track_guid = ""
-local mapper_fx = -1
 local mouse_was_down = false
 local learn_slot = nil
 local learn_snapshot = nil
 local learn_started_at = 0
 local last_dock_state = nil
+local seen_midi = {}
+local seen_midi_order = {}
+local last_cc = nil
+local last_cc_value = nil
+local last_cc_delta = nil
+local last_cc_slot = nil
+local midi_activity_until = 0
+local midi_api_missing = false
 
 local function clamp(value, lo, hi)
   if value < lo then return lo end
@@ -151,57 +161,6 @@ local function fx_name(track, fx)
   return name or ""
 end
 
-local function menu_label(value)
-  value = tostring(value or "")
-  value = value:gsub("[|<>#!]", " ")
-  value = value:gsub("%s+", " ")
-  return value
-end
-
-local function find_mapper_fx(track)
-  if not track then return -1 end
-  for fx = 0, reaper.TrackFX_GetCount(track) - 1 do
-    if fx_name(track, fx):find(MAPPER_NAME, 1, true) then
-      return fx
-    end
-  end
-  return -1
-end
-
-local function mapper_fx_indices(track)
-  local indices = {}
-  if not track then return indices end
-
-  for fx = 0, reaper.TrackFX_GetCount(track) - 1 do
-    if fx_name(track, fx):find(MAPPER_NAME, 1, true) then
-      indices[#indices + 1] = fx
-    end
-  end
-
-  return indices
-end
-
-local function ensure_mapper_fx(track)
-  local fx = find_mapper_fx(track)
-  if fx >= 0 then
-    if fx > 0 and reaper.TrackFX_CopyToTrack then
-      reaper.TrackFX_CopyToTrack(track, fx, track, 0, true)
-      return 0
-    end
-    return fx
-  end
-
-  fx = reaper.TrackFX_AddByName(track, "JS: MIDI FX Chain Knob Mapper", false, 1)
-  if fx < 0 then
-    fx = reaper.TrackFX_AddByName(track, MAPPER_NAME, false, 1)
-  end
-  if fx > 0 and reaper.TrackFX_CopyToTrack then
-    reaper.TrackFX_CopyToTrack(track, fx, track, 0, true)
-    return 0
-  end
-  return fx
-end
-
 local function fx_guid(track, fx)
   if not track or fx < 0 then return "" end
   if reaper.TrackFX_GetFXGUID then
@@ -210,13 +169,20 @@ local function fx_guid(track, fx)
   return ""
 end
 
+local function menu_label(value)
+  value = tostring(value or "")
+  value = value:gsub("[|<>#!]", " ")
+  value = value:gsub("%s+", " ")
+  return value
+end
+
 local function resolve_target(track, mapping)
   if not track or not mapping or not mapping.enabled then return -1, -1 end
 
   local count = reaper.TrackFX_GetCount(track)
   if mapping.target_fx_guid and mapping.target_fx_guid ~= "" then
     for fx = 0, count - 1 do
-      if fx ~= mapper_fx and fx_guid(track, fx) == mapping.target_fx_guid then
+      if fx_guid(track, fx) == mapping.target_fx_guid then
         return fx, mapping.target_param
       end
     end
@@ -224,16 +190,14 @@ local function resolve_target(track, mapping)
 
   if mapping.target_fx_name and mapping.target_fx_name ~= "" then
     for fx = 0, count - 1 do
-      if fx ~= mapper_fx and fx_name(track, fx) == mapping.target_fx_name then
+      if fx_name(track, fx) == mapping.target_fx_name then
         return fx, mapping.target_param
       end
     end
   end
 
   if mapping.target_fx_index and mapping.target_fx_index >= 0 and mapping.target_fx_index < count then
-    if mapping.target_fx_index ~= mapper_fx then
-      return mapping.target_fx_index, mapping.target_param
-    end
+    return mapping.target_fx_index, mapping.target_param
   end
 
   return -1, -1
@@ -262,10 +226,8 @@ local function capture_parameter_snapshot(track)
   if not track then return snapshot end
 
   for fx = 0, reaper.TrackFX_GetCount(track) - 1 do
-    if fx ~= mapper_fx then
-      for param = 0, reaper.TrackFX_GetNumParams(track, fx) - 1 do
-        snapshot[fx .. ":" .. param] = reaper.TrackFX_GetParamNormalized(track, fx, param)
-      end
+    for param = 0, reaper.TrackFX_GetNumParams(track, fx) - 1 do
+      snapshot[fx .. ":" .. param] = reaper.TrackFX_GetParamNormalized(track, fx, param)
     end
   end
 
@@ -285,7 +247,7 @@ local function assign_slot(slot, fx, param)
 end
 
 local function start_learn(slot)
-  if not current_track or mapper_fx < 0 then return end
+  if not current_track then return end
   learn_slot = slot
   learn_snapshot = capture_parameter_snapshot(current_track)
   learn_started_at = reaper.time_precise and reaper.time_precise() or 0
@@ -298,7 +260,7 @@ local function cancel_learn()
 end
 
 local function poll_learn()
-  if not learn_slot or not current_track or mapper_fx < 0 or not learn_snapshot then return end
+  if not learn_slot or not current_track or not learn_snapshot then return end
 
   local now = reaper.time_precise and reaper.time_precise() or 0
   if learn_started_at > 0 and now - learn_started_at > 20 then
@@ -308,16 +270,14 @@ local function poll_learn()
 
   local best_fx, best_param, best_delta = nil, nil, 0
   for fx = 0, reaper.TrackFX_GetCount(current_track) - 1 do
-    if fx ~= mapper_fx then
-      for param = 0, reaper.TrackFX_GetNumParams(current_track, fx) - 1 do
-        local key = fx .. ":" .. param
-        local old_value = learn_snapshot[key]
-        if old_value ~= nil then
-          local value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
-          local delta = math.abs(value - old_value)
-          if delta > best_delta then
-            best_fx, best_param, best_delta = fx, param, delta
-          end
+    for param = 0, reaper.TrackFX_GetNumParams(current_track, fx) - 1 do
+      local key = fx .. ":" .. param
+      local old_value = learn_snapshot[key]
+      if old_value ~= nil then
+        local value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
+        local delta = math.abs(value - old_value)
+        if delta > best_delta then
+          best_fx, best_param, best_delta = fx, param, delta
         end
       end
     end
@@ -336,62 +296,67 @@ local function refresh_track()
     current_track = track
     current_track_guid = track_guid(track)
     if track then
-      mapper_fx = ensure_mapper_fx(track)
       load_slots(current_track_guid)
     else
-      mapper_fx = -1
       reset_slots()
     end
-  elseif track then
-    mapper_fx = ensure_mapper_fx(track)
   end
 end
 
-local function set_all_mapper_status_params(param, value)
-  if not current_track then return end
+local function relative_delta(value)
+  if value > 0 and value < 64 then return value end
+  if value > 64 then return value - 128 end
+  return 0
+end
 
-  for _, fx in ipairs(mapper_fx_indices(current_track)) do
-    reaper.TrackFX_SetParamNormalized(current_track, fx, param, clamp(value, 0, 1))
+local function remember_midi_event(key)
+  if seen_midi[key] then return false end
+
+  seen_midi[key] = true
+  seen_midi_order[#seen_midi_order + 1] = key
+  while #seen_midi_order > MIDI_SEEN_LIMIT do
+    local old_key = table.remove(seen_midi_order, 1)
+    seen_midi[old_key] = nil
+  end
+
+  return true
+end
+
+local function apply_slot_delta(slot, delta)
+  if not current_track or delta == 0 then return end
+
+  local mapping = slots[slot]
+  local fx, param = resolve_target(current_track, mapping)
+  if fx >= 0 and param >= 0 and param < reaper.TrackFX_GetNumParams(current_track, fx) then
+    local current_value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
+    local next_value = clamp(current_value + delta * (mapping.sensitivity or DEFAULT_SENSITIVITY), 0, 1)
+    reaper.TrackFX_SetParamNormalized(current_track, fx, param, next_value)
   end
 end
 
-local function sensitivity_to_normalized(value)
-  return clamp((value - 0.0001) / (0.05 - 0.0001), 0, 1)
-end
-
-local function update_mapper_status()
-  if not current_track or mapper_fx < 0 then return end
-
-  for slot = 1, SLOT_COUNT do
-    local mapping = slots[slot]
-    local fx, param = resolve_target(current_track, mapping)
-    local mapped = fx >= 0 and param >= 0 and param < reaper.TrackFX_GetNumParams(current_track, fx)
-    local value = 0
-    if mapped then
-      value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
-    end
-
-    set_all_mapper_status_params(8 + slot - 1, mapped and 1 or 0)
-    set_all_mapper_status_params(16 + slot - 1, value)
-    set_all_mapper_status_params(24 + slot - 1, sensitivity_to_normalized(mapping.sensitivity or DEFAULT_SENSITIVITY))
+local function poll_midi_input()
+  if not reaper.MIDI_GetRecentInputEvent then
+    midi_api_missing = true
+    return
   end
-end
 
-local function poll_mapper_deltas()
-  if not current_track or mapper_fx < 0 then return end
+  midi_api_missing = false
+  for idx = 0, MIDI_SCAN_LIMIT - 1 do
+    local ok, retval, msg, timestamp, device = pcall(reaper.MIDI_GetRecentInputEvent, idx)
+    if not ok or not retval or retval == 0 or not msg or #msg < 3 then break end
 
-  for _, source_fx in ipairs(mapper_fx_indices(current_track)) do
-    for slot = 1, SLOT_COUNT do
-      local delta = select(1, reaper.TrackFX_GetParam(current_track, source_fx, slot - 1))
-      if math.abs(delta) >= 0.5 then
-        reaper.TrackFX_SetParam(current_track, source_fx, slot - 1, 0)
+    local status, data1, data2 = msg:byte(1, 3)
+    if status and (status & 0xF0) == 0xB0 then
+      local key = tostring(timestamp) .. ":" .. tostring(device) .. ":" .. tostring(status) .. ":" .. tostring(data1) .. ":" .. tostring(data2)
+      if remember_midi_event(key) then
+        last_cc = data1
+        last_cc_value = data2
+        last_cc_delta = relative_delta(data2)
+        last_cc_slot = data1 >= CC_FIRST and data1 <= CC_LAST and (data1 - CC_FIRST + 1) or nil
+        midi_activity_until = reaper.time_precise and (reaper.time_precise() + 1.0) or 1
 
-        local mapping = slots[slot]
-        local fx, param = resolve_target(current_track, mapping)
-        if fx >= 0 and param >= 0 and param < reaper.TrackFX_GetNumParams(current_track, fx) then
-          local current_value = reaper.TrackFX_GetParamNormalized(current_track, fx, param)
-          local next_value = clamp(current_value + delta * (mapping.sensitivity or DEFAULT_SENSITIVITY), 0, 1)
-          reaper.TrackFX_SetParamNormalized(current_track, fx, param, next_value)
+        if last_cc_slot then
+          apply_slot_delta(last_cc_slot, last_cc_delta)
         end
       end
     end
@@ -404,10 +369,8 @@ local function choose_fx(slot)
   local fx_indices = {}
   local items = { "Clear mapping" }
   for fx = 0, reaper.TrackFX_GetCount(current_track) - 1 do
-    if fx ~= mapper_fx then
-      fx_indices[#fx_indices + 1] = fx
-      items[#items + 1] = menu_label(fx + 1 .. ": " .. fx_name(current_track, fx))
-    end
+    fx_indices[#fx_indices + 1] = fx
+    items[#items + 1] = menu_label(fx + 1 .. ": " .. fx_name(current_track, fx))
   end
 
   gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
@@ -490,6 +453,20 @@ local function point_in_rect(x, y, w, h)
   return gfx.mouse_x >= x and gfx.mouse_x <= x + w and gfx.mouse_y >= y and gfx.mouse_y <= y + h
 end
 
+local function midi_status_label()
+  if midi_api_missing then
+    return "MIDI_GetRecentInputEvent not available"
+  end
+
+  local now = reaper.time_precise and reaper.time_precise() or 0
+  if last_cc and midi_activity_until >= now then
+    local slot = last_cc_slot and ("  slot " .. tostring(last_cc_slot)) or "  ignored"
+    return string.format("Last CC %d value %d delta %+d%s", last_cc, last_cc_value or 0, last_cc_delta or 0, slot)
+  end
+
+  return "Waiting for global CC16-CC23"
+end
+
 local function draw_ui()
   gfx.set(0.06, 0.065, 0.07, 1)
   gfx.rect(0, 0, gfx.w, gfx.h, 1)
@@ -501,15 +478,13 @@ local function draw_ui()
 
   if not current_track then
     draw_text(18, 46, "Select a track to create or edit its 8 knob mappings.", 0.70, 0.73, 0.72)
+    draw_text(18, 68, midi_status_label(), 0.70, 0.73, 0.72)
     return
   end
 
   local _, track_name = reaper.GetTrackName(current_track, "")
   draw_text(18, 46, "Track: " .. track_name, 0.70, 0.73, 0.72)
-  if mapper_fx < 0 then
-    draw_text(18, 68, "Mapper JSFX was not found or could not be inserted.", 0.95, 0.50, 0.42)
-    return
-  end
+  draw_text(360, 46, midi_status_label(), 0.70, 0.73, 0.72)
 
   local y = 82
   for slot = 1, SLOT_COUNT do
@@ -525,8 +500,9 @@ local function draw_ui()
     local fx_label = mapped and fx_name(current_track, fx) or (mapping.enabled and "Unresolved FX" or "Choose FX")
     local param_label = mapped and param_name(current_track, fx, param) or "Choose parameter"
     local value_label = mapped and param_value_label(current_track, fx, param) or "--"
-    draw_button(126, y - 1, 190, 24, fx_label, mapped)
-    draw_button(324, y - 1, 170, 24, param_label, mapped)
+    local active = last_cc_slot == slot and (midi_activity_until >= (reaper.time_precise and reaper.time_precise() or 0))
+    draw_button(126, y - 1, 190, 24, fx_label, mapped or active)
+    draw_button(324, y - 1, 170, 24, param_label, mapped or active)
     draw_button(502, y - 1, 78, 24, value_label, mapped)
     draw_button(588, y - 1, 72, 24, learn_slot == slot and "Learning" or "Learn", learn_slot == slot)
 
@@ -588,9 +564,8 @@ end
 
 local function loop()
   refresh_track()
+  poll_midi_input()
   poll_learn()
-  poll_mapper_deltas()
-  update_mapper_status()
   draw_ui()
   handle_mouse()
   save_dock_state()

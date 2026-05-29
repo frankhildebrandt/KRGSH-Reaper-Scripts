@@ -171,24 +171,18 @@ state. Other MIDI messages pass through unchanged.
 
 ### MIDI FX Chain Knob Mapper
 
-`MIDI FX Chain Knob Mapper` is a hybrid JSFX and ReaScript controller for the
-Akai MPK mini plus knobs in relative mode:
+`MIDI FX Chain Knob Mapper` is a dockable ReaScript controller for the Akai MPK
+mini plus knobs in relative mode:
 
-- The JSFX receives CC16 through CC23, shows an 8-knob UI in the FX chain, and
-  passes all MIDI through unchanged.
-- The companion `MIDI FX Chain Knob Mapper` ReaScript opens the assignment UI,
-  inserts the mapper JSFX on the selected track if needed, and maps each knob to
-  one parameter in that track's FX chain.
+- The script watches global recent MIDI CC16 through CC23 and maps each knob to
+  one parameter in the selected track's FX chain. No mapper JSFX is required.
 - Click an FX field to choose the target FX, then click the parameter field to
   choose the target parameter.
 - Click `Learn`, move one FX parameter in the selected track's FX chain, and the
   slot assigns itself to that changed parameter. Use `-` and `+` to adjust
   per-knob sensitivity.
 - The mapper window is dockable and shows the current mapped parameter values.
-  Target parameter changes are mirrored back into the JSFX knob display while
-  JSFX knob movement is applied to the target parameter.
-- Keep the mapper JSFX before instruments or MIDI-consuming FX. The companion
-  script moves it to the beginning of the selected track FX chain automatically.
+  Incoming knob movement is applied directly to the mapped target parameter.
 
 Set the MPK mini plus knobs to relative `1/127` mode. Values 1 through 63 nudge
 the mapped parameter upward, and values 65 through 127 nudge it downward.
