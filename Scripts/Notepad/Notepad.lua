@@ -1,5 +1,5 @@
 -- @description Notepad
--- @version 1.0.1
+-- @version 1.0.2
 -- @author KRGSH
 -- @provides
 --   [main] Notepad - Install toolbar.lua
@@ -376,16 +376,16 @@ local function button(label)
   return reaper.ImGui_Button(ctx, label)
 end
 
-local function begin_child(id, w, h, border, window_flags)
-  local child_flags = 0
-  if border and reaper.ImGui_ChildFlags_Border then
-    child_flags = reaper.ImGui_ChildFlags_Border()
-  end
+local CHILD_FLAGS_NONE = 0
+local CHILD_FLAGS_BORDER = reaper.ImGui_ChildFlags_Border and reaper.ImGui_ChildFlags_Border() or 0
+
+local function begin_child(id, w, h, child_flags, window_flags)
+  child_flags = tonumber(child_flags) or CHILD_FLAGS_NONE
   return reaper.ImGui_BeginChild(ctx, id, w, h, child_flags, window_flags or 0)
 end
 
 local function draw_sidebar()
-  if begin_child("notes", SIDEBAR_WIDTH, 0, true) then
+  if begin_child("notes", SIDEBAR_WIDTH, 0, CHILD_FLAGS_BORDER) then
     reaper.ImGui_Text(ctx, "Notes")
     reaper.ImGui_Separator(ctx)
     for _, note in ipairs(notes) do
@@ -419,7 +419,7 @@ end
 local function draw_preview()
   reaper.ImGui_Text(ctx, "Preview")
   reaper.ImGui_Separator(ctx)
-  if begin_child("preview", 0, 0, true) then
+  if begin_child("preview", 0, 0, CHILD_FLAGS_BORDER) then
     local number = 1
     for _, block in ipairs(markdown_blocks(body_buffer)) do
       if block.type == "heading" then
@@ -462,7 +462,7 @@ local function draw_editor()
   local editor_w = math.max(260, (available_w * 0.56) - 8)
   local preview_w = math.max(220, available_w - editor_w - 12)
 
-  if begin_child("editor", editor_w, available_h, true) then
+  if begin_child("editor", editor_w, available_h, CHILD_FLAGS_BORDER) then
     reaper.ImGui_Text(ctx, "Markdown")
     reaper.ImGui_Separator(ctx)
     local input_flags = reaper.ImGui_InputTextFlags_AllowTabInput and reaper.ImGui_InputTextFlags_AllowTabInput() or 0
@@ -475,7 +475,7 @@ local function draw_editor()
   end
 
   reaper.ImGui_SameLine(ctx)
-  if begin_child("preview-pane", preview_w, available_h, true) then
+  if begin_child("preview-pane", preview_w, available_h, CHILD_FLAGS_BORDER) then
     draw_preview()
     reaper.ImGui_EndChild(ctx)
   end
@@ -507,7 +507,7 @@ local function loop()
 
     draw_sidebar()
     reaper.ImGui_SameLine(ctx)
-    if begin_child("main", 0, 0, false) then
+    if begin_child("main", 0, 0, CHILD_FLAGS_NONE) then
       draw_editor()
       reaper.ImGui_EndChild(ctx)
     end

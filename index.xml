@@ -53,7 +53,7 @@ Fixed JSFX memory layout corruption.]]></description>
       <metadata>
         <description><![CDATA[Dockable dark-mode Markdown notepad for REAPER projects. Notes are saved into the project via ProjExtState.]]></description>
       </metadata>
-      <version name="1.0.1" author="KRGSH" time="2026-05-30T00:00:00Z">
+      <version name="1.0.2" author="KRGSH" time="2026-05-30T00:00:00Z">
         <source file="Notepad.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Notepad/Notepad.lua</source>
         <source file="Notepad - Install toolbar.lua" main="main">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Scripts/Notepad/Notepad%20-%20Install%20toolbar.lua</source>
         <source file="../../Data/toolbar_icons/notepad.svg">https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Data/toolbar_icons/notepad.svg</source>
