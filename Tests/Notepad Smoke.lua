@@ -26,6 +26,14 @@ if not chunk then
 end
 
 local helpers = chunk()
+local source_file = io.open(script_dir .. "Notepad.lua", "rb")
+local source = source_file:read("*a")
+source_file:close()
+
+assert_equal(source:match("ImGui_PushFont%([^,\n]+,[^,\n]+%)") == nil, true, "PushFont always passes size")
+assert_equal(source:match("ImGui_CreateFont%([^%)]+,%s*%d+%)") == nil, true, "CreateFont does not pass removed size")
+assert_equal(source:match("ImGui_ChildFlags_Borders") ~= nil, true, "current child border flag is used")
+
 local markdown = "# Titel\n\n- eins|zwei\n- 50% fertig\n\n```lua\nprint('hi')\n```\n\n[Link](https://example.com)"
 local state = helpers.load_state_from_table({
   list = "1|Projekt%7CNotiz\n2|Idee",

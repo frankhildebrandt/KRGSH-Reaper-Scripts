@@ -1,5 +1,5 @@
 -- @description Notepad
--- @version 1.0.2
+-- @version 1.0.3
 -- @author KRGSH
 -- @provides
 --   [main] Notepad - Install toolbar.lua
@@ -323,8 +323,10 @@ if not reaper.ImGui_CreateContext then
 end
 
 local ctx = reaper.ImGui_CreateContext(WINDOW_TITLE)
-local font = reaper.ImGui_CreateFont and reaper.ImGui_CreateFont("sans-serif", 14)
-local mono_font = reaper.ImGui_CreateFont and reaper.ImGui_CreateFont("monospace", 13)
+local FONT_SIZE = 14
+local MONO_FONT_SIZE = 13
+local font = reaper.ImGui_CreateFont and reaper.ImGui_CreateFont("sans-serif")
+local mono_font = reaper.ImGui_CreateFont and reaper.ImGui_CreateFont("monospace")
 if font and reaper.ImGui_Attach then reaper.ImGui_Attach(ctx, font) end
 if mono_font and reaper.ImGui_Attach then reaper.ImGui_Attach(ctx, mono_font) end
 
@@ -377,7 +379,9 @@ local function button(label)
 end
 
 local CHILD_FLAGS_NONE = 0
-local CHILD_FLAGS_BORDER = reaper.ImGui_ChildFlags_Border and reaper.ImGui_ChildFlags_Border() or 0
+local CHILD_FLAGS_BORDER = reaper.ImGui_ChildFlags_Borders and reaper.ImGui_ChildFlags_Borders()
+  or reaper.ImGui_ChildFlags_Border and reaper.ImGui_ChildFlags_Border()
+  or 0
 
 local function begin_child(id, w, h, child_flags, window_flags)
   child_flags = tonumber(child_flags) or CHILD_FLAGS_NONE
@@ -423,7 +427,7 @@ local function draw_preview()
     local number = 1
     for _, block in ipairs(markdown_blocks(body_buffer)) do
       if block.type == "heading" then
-        if font and reaper.ImGui_PushFont then reaper.ImGui_PushFont(ctx, font) end
+        if font and reaper.ImGui_PushFont then reaper.ImGui_PushFont(ctx, font, FONT_SIZE) end
         reaper.ImGui_TextColored(ctx, colors.accent, block.text)
         if font and reaper.ImGui_PopFont then reaper.ImGui_PopFont(ctx) end
         reaper.ImGui_Separator(ctx)
@@ -435,7 +439,7 @@ local function draw_preview()
       elseif block.type == "quote" then
         reaper.ImGui_TextColored(ctx, colors.quote, "> " .. block.text)
       elseif block.type == "code" then
-        if mono_font and reaper.ImGui_PushFont then reaper.ImGui_PushFont(ctx, mono_font) end
+        if mono_font and reaper.ImGui_PushFont then reaper.ImGui_PushFont(ctx, mono_font, MONO_FONT_SIZE) end
         reaper.ImGui_TextColored(ctx, colors.code, block.text == "" and " " or block.text)
         if mono_font and reaper.ImGui_PopFont then reaper.ImGui_PopFont(ctx) end
       elseif block.type == "blank" or block.type == "code_fence" then
