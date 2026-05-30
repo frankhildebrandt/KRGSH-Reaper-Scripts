@@ -33,6 +33,10 @@ source_file:close()
 assert_equal(source:match("ImGui_PushFont%([^,\n]+,[^,\n]+%)") == nil, true, "PushFont always passes size")
 assert_equal(source:match("ImGui_CreateFont%([^%)]+,%s*%d+%)") == nil, true, "CreateFont does not pass removed size")
 assert_equal(source:match("ImGui_ChildFlags_Borders") ~= nil, true, "current child border flag is used")
+assert_equal(source:match("preview%-pane") == nil, true, "preview is not permanently split")
+assert_equal(source:match("view_mode") ~= nil, true, "view mode state exists")
+assert_equal(source:match("note_browser_open") ~= nil, true, "note browser collapse state exists")
+assert_equal(source:match("ImGui_SliderDouble%(ctx, \"Font size\"") ~= nil, true, "font size control exists")
 
 local markdown = "# Titel\n\n- eins|zwei\n- 50% fertig\n\n```lua\nprint('hi')\n```\n\n[Link](https://example.com)"
 local state = helpers.load_state_from_table({
@@ -73,5 +77,7 @@ assert_equal(blocks[1].type, "heading", "heading parsed")
 assert_equal(blocks[3].type, "bullet", "bullet parsed")
 assert_equal(blocks[7].type, "code", "code parsed")
 assert_equal(helpers.strip_inline_markdown("**Bold** and [site](https://example.com)"), "Bold and site <https://example.com>", "inline markdown stripped")
+assert_equal(helpers.normalize_view_mode("preview"), "preview", "preview view mode")
+assert_equal(helpers.normalize_view_mode("anything"), "edit", "invalid view mode fallback")
 
 print("Notepad smoke tests passed")

@@ -1,5 +1,5 @@
 -- @description Notepad - Install toolbar
--- @version 1.0.3
+-- @version 1.1.0
 -- @author KRGSH
 -- @noindex
 -- @provides

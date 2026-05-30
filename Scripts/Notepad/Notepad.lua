@@ -1,5 +1,5 @@
 -- @description Notepad
--- @version 1.0.3
+-- @version 1.1.0
 -- @author KRGSH
 -- @provides
 --   [main] Notepad - Install toolbar.lua
@@ -17,6 +17,9 @@ local WIDTH = 980
 local HEIGHT = 620
 local SIDEBAR_WIDTH = 220
 local AUTOSAVE_INTERVAL = 0.75
+local DEFAULT_FONT_SIZE = 14
+local MIN_FONT_SIZE = 10
+local MAX_FONT_SIZE = 28
 
 local notes = {}
 local active_id = ""
@@ -26,6 +29,9 @@ local last_save_at = 0
 local title_buffer = ""
 local body_buffer = ""
 local last_dock_id = 0
+local view_mode = "edit"
+local note_browser_open = true
+local font_size = DEFAULT_FONT_SIZE
 
 local function esc(value)
   value = tostring(value or "")
@@ -54,6 +60,28 @@ local function normalized_title(value)
     return "Untitled"
   end
   return value:gsub("[\r\n]+", " ")
+end
+
+local function clamp(value, lo, hi)
+  value = tonumber(value) or lo
+  if value < lo then return lo end
+  if value > hi then return hi end
+  return value
+end
+
+local function normalize_view_mode(value)
+  value = tostring(value or "")
+  if value == "preview" then
+    return "preview"
+  end
+  return "edit"
+end
+
+local function normalize_bool(value, fallback)
+  value = tostring(value or "")
+  if value == "1" or value == "true" then return true end
+  if value == "0" or value == "false" then return false end
+  return fallback
 end
 
 local function note_index_by_id(id)
@@ -231,6 +259,9 @@ local function load_project_state()
   active_id = ext_get("active_id")
   next_id = tonumber(ext_get("next_id")) or next_id
   last_dock_id = tonumber(ext_get("dock_id")) or 0
+  view_mode = normalize_view_mode(ext_get("view_mode"))
+  note_browser_open = normalize_bool(ext_get("note_browser_open"), true)
+  font_size = clamp(ext_get("font_size"), MIN_FONT_SIZE, MAX_FONT_SIZE)
   ensure_default_note()
   dirty = false
 end
@@ -242,6 +273,9 @@ local function save_project_state(force)
   ext_set("active_id", active_id)
   ext_set("next_id", tostring(next_id))
   ext_set("dock_id", tostring(last_dock_id or 0))
+  ext_set("view_mode", view_mode)
+  ext_set("note_browser_open", note_browser_open and "1" or "0")
+  ext_set("font_size", tostring(font_size))
   for _, note in ipairs(notes) do
     ext_set(NOTE_PREFIX .. note.id, note.body)
   end
@@ -301,6 +335,7 @@ local helpers = {
   load_state_from_table = load_state_from_table,
   markdown_blocks = markdown_blocks,
   normalized_title = normalized_title,
+  normalize_view_mode = normalize_view_mode,
   serialize_notes = serialize_notes,
   strip_inline_markdown = strip_inline_markdown,
 }
@@ -323,8 +358,6 @@ if not reaper.ImGui_CreateContext then
 end
 
 local ctx = reaper.ImGui_CreateContext(WINDOW_TITLE)
-local FONT_SIZE = 14
-local MONO_FONT_SIZE = 13
 local font = reaper.ImGui_CreateFont and reaper.ImGui_CreateFont("sans-serif")
 local mono_font = reaper.ImGui_CreateFont and reaper.ImGui_CreateFont("monospace")
 if font and reaper.ImGui_Attach then reaper.ImGui_Attach(ctx, font) end
@@ -421,13 +454,12 @@ local function draw_sidebar()
 end
 
 local function draw_preview()
-  reaper.ImGui_Text(ctx, "Preview")
-  reaper.ImGui_Separator(ctx)
   if begin_child("preview", 0, 0, CHILD_FLAGS_BORDER) then
+    if font and reaper.ImGui_PushFont then reaper.ImGui_PushFont(ctx, font, font_size) end
     local number = 1
     for _, block in ipairs(markdown_blocks(body_buffer)) do
       if block.type == "heading" then
-        if font and reaper.ImGui_PushFont then reaper.ImGui_PushFont(ctx, font, FONT_SIZE) end
+        if font and reaper.ImGui_PushFont then reaper.ImGui_PushFont(ctx, font, font_size + 2) end
         reaper.ImGui_TextColored(ctx, colors.accent, block.text)
         if font and reaper.ImGui_PopFont then reaper.ImGui_PopFont(ctx) end
         reaper.ImGui_Separator(ctx)
@@ -439,7 +471,7 @@ local function draw_preview()
       elseif block.type == "quote" then
         reaper.ImGui_TextColored(ctx, colors.quote, "> " .. block.text)
       elseif block.type == "code" then
-        if mono_font and reaper.ImGui_PushFont then reaper.ImGui_PushFont(ctx, mono_font, MONO_FONT_SIZE) end
+        if mono_font and reaper.ImGui_PushFont then reaper.ImGui_PushFont(ctx, mono_font, font_size) end
         reaper.ImGui_TextColored(ctx, colors.code, block.text == "" and " " or block.text)
         if mono_font and reaper.ImGui_PopFont then reaper.ImGui_PopFont(ctx) end
       elseif block.type == "blank" or block.type == "code_fence" then
@@ -448,6 +480,7 @@ local function draw_preview()
         reaper.ImGui_TextWrapped(ctx, block.text)
       end
     end
+    if font and reaper.ImGui_PopFont then reaper.ImGui_PopFont(ctx) end
     reaper.ImGui_EndChild(ctx)
   end
 end
@@ -456,31 +489,46 @@ local function draw_editor()
   local note = active_note()
   if not note then return end
 
+  if reaper.ImGui_Button(ctx, note_browser_open and "<" or ">") then
+    note_browser_open = not note_browser_open
+    dirty = true
+  end
+  reaper.ImGui_SameLine(ctx)
+  if reaper.ImGui_Button(ctx, view_mode == "edit" and "Preview" or "Edit") then
+    apply_buffers_to_active()
+    view_mode = view_mode == "edit" and "preview" or "edit"
+    dirty = true
+  end
+  reaper.ImGui_SameLine(ctx)
+  reaper.ImGui_SetNextItemWidth(ctx, 120)
+  local font_changed, next_font_size = reaper.ImGui_SliderDouble(ctx, "Font size", font_size, MIN_FONT_SIZE, MAX_FONT_SIZE, "%.0f")
+  if font_changed then
+    font_size = clamp(next_font_size, MIN_FONT_SIZE, MAX_FONT_SIZE)
+    dirty = true
+  end
+
   local title_changed, next_title = reaper.ImGui_InputText(ctx, "Title", title_buffer)
   if title_changed then
     title_buffer = next_title
     apply_buffers_to_active()
   end
 
-  local available_w, available_h = reaper.ImGui_GetContentRegionAvail(ctx)
-  local editor_w = math.max(260, (available_w * 0.56) - 8)
-  local preview_w = math.max(220, available_w - editor_w - 12)
+  local _, available_h = reaper.ImGui_GetContentRegionAvail(ctx)
 
-  if begin_child("editor", editor_w, available_h, CHILD_FLAGS_BORDER) then
-    reaper.ImGui_Text(ctx, "Markdown")
-    reaper.ImGui_Separator(ctx)
+  if view_mode == "preview" then
+    draw_preview()
+    return
+  end
+
+  if begin_child("editor", 0, available_h, CHILD_FLAGS_BORDER) then
     local input_flags = reaper.ImGui_InputTextFlags_AllowTabInput and reaper.ImGui_InputTextFlags_AllowTabInput() or 0
+    if font and reaper.ImGui_PushFont then reaper.ImGui_PushFont(ctx, font, font_size) end
     local changed, next_body = reaper.ImGui_InputTextMultiline(ctx, "##body", body_buffer, -1, -1, input_flags)
+    if font and reaper.ImGui_PopFont then reaper.ImGui_PopFont(ctx) end
     if changed then
       body_buffer = next_body
       apply_buffers_to_active()
     end
-    reaper.ImGui_EndChild(ctx)
-  end
-
-  reaper.ImGui_SameLine(ctx)
-  if begin_child("preview-pane", preview_w, available_h, CHILD_FLAGS_BORDER) then
-    draw_preview()
     reaper.ImGui_EndChild(ctx)
   end
 end
@@ -509,8 +557,10 @@ local function loop()
       end
     end
 
-    draw_sidebar()
-    reaper.ImGui_SameLine(ctx)
+    if note_browser_open then
+      draw_sidebar()
+      reaper.ImGui_SameLine(ctx)
+    end
     if begin_child("main", 0, 0, CHILD_FLAGS_NONE) then
       draw_editor()
       reaper.ImGui_EndChild(ctx)
