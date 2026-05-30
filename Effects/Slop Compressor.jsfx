@@ -1,0 +1,638 @@
+version: 1.0.0
+author: KRGSH
+vendor: KRGSH
+desc: Slop Compressor
+about:
+  A tweaked compressor with a custom UI, based on Thomas Scott Stillwell's 1175 FAST Attack Compressor.
+
+// Copyright 2006, Thomas Scott Stillwell
+// All rights reserved.
+//
+// --
+// Slop Changes made with Codex GPT 5.5
+// Copyright 2026, Frank Hildebrandt
+// All rights reserved
+//
+//Redistribution and use in source and binary forms, with or without modification, are permitted
+//provided that the following conditions are met:
+//
+//Redistributions of source code must retain the above copyright notice, this list of conditions
+//and the following disclaimer.
+//
+//Redistributions in binary form must reproduce the above copyright notice, this list of conditions
+//and the following disclaimer in the documentation and/or other materials provided with the distribution.
+//
+//The name of Thomas Scott Stillwell may not be used to endorse or
+//promote products derived from this software without specific prior written permission.
+//
+//THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
+//IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+//FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
+//BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+//(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+//PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+//STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+//THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+//tags: dynamics compressor
+//author: KRGSH
+
+slider1:0<-60,0,0.1>-Threshold (dB)
+slider2:5<0,17,1{Blown Capacitor 4 (Deprecated),Blown Capacitor 8 (Deprecated),Blown Capacitor 12 (Deprecated),Blown Capacitor 20 (Deprecated),Blown Capacitor All (Deprecated),1.1,1.2,1.4,1.8,2,2.5,3,3.5,4,8,12,20,All}>-Ratio
+slider3:0<-20,20,0.1>-Gain (dB)
+slider4:20<20,2000,10>-Attack (uS)
+slider5:250<20,1000,1>-Release (mS)
+slider6:100<0,100,0.1>-Mix (%)
+slider7:0<0,1,1{Off,On}>-Instant Attack
+slider8:0<-20,80,0.1>-Pre Gain (dB)
+slider9:0<0,1,1{Off,On}>-Brickwall
+slider10:60<20,250,1>-Low Cut (Hz)
+slider11:0<0,1,1{Off,On}>-Low Cut Enable
+
+in_pin:left input
+in_pin:right input
+out_pin:left output
+out_pin:right output
+
+@init
+  ext_tail_size = -1;
+  log2db = 8.6858896380650365530225783783321; // 20 / ln(10)
+  db2log = 0.11512925464970228420089957273422; // ln(10) / 20
+  attime=0.010;
+  reltime=0.100;
+  ratio=0;
+  cratio=0;
+  brickwall=0;
+  rundb=0;
+  overdb=0;
+  ratatcoef = exp(-1/(0.00001 * srate));
+  ratrelcoef = exp(-1/(0.5 * srate));
+  atcoef=exp(-1/(attime * srate));
+  relcoef=exp(-1/(reltime * srate));
+  mix=1;
+  pregainv=1;
+  lowcut=0;
+  lowcut_was=0;
+  lowcut_freq=60;
+  lowcut_a=1 / (1 + 2 * $pi * lowcut_freq / srate);
+  lowcut_x0=0;
+  lowcut_x1=0;
+  lowcut_y0=0;
+  lowcut_y1=0;
+  gr_meter=1;
+  gr_meter_decay = exp(1/(1*srate));
+  ext_gr_meter = 0;
+  ui_drag = 0;
+  ui_last_mouse_cap = 0;
+  ui_last_click_time = -1;
+  ui_last_click_knob = 0;
+  slider_show(slider1,0);
+  slider_show(slider2,0);
+  slider_show(slider3,0);
+  slider_show(slider4,0);
+  slider_show(slider5,0);
+  slider_show(slider6,0);
+  slider_show(slider7,0);
+  slider_show(slider8,0);
+  slider_show(slider9,0);
+  slider_show(slider10,0);
+  slider_show(slider11,0);
+  slider_show(1,0);
+  slider_show(2,0);
+  slider_show(3,0);
+  slider_show(4,0);
+  slider_show(5,0);
+  slider_show(6,0);
+  slider_show(7,0);
+  slider_show(8,0);
+  slider_show(9,0);
+  slider_show(10,0);
+  slider_show(11,0);
+
+@slider
+  slider_show(slider1,0);
+  slider_show(slider2,0);
+  slider_show(slider3,0);
+  slider_show(slider4,0);
+  slider_show(slider5,0);
+  slider_show(slider6,0);
+  slider_show(slider7,0);
+  slider_show(slider8,0);
+  slider_show(slider9,0);
+  slider_show(slider10,0);
+  slider_show(slider11,0);
+  slider_show(1,0);
+  slider_show(2,0);
+  slider_show(3,0);
+  slider_show(4,0);
+  slider_show(5,0);
+  slider_show(6,0);
+  slider_show(7,0);
+  slider_show(8,0);
+  slider_show(9,0);
+  slider_show(10,0);
+  slider_show(11,0);
+
+  thresh = slider1;
+  threshv = exp(thresh * db2log);
+
+  capsc = log2db;
+  ratio_is_broken = slider2 <= 4;
+  (rpos = slider2) > 4 ? ( rpos -= 5; ) : ( capsc *= 2.08136898; /* broken capacitor */ );
+  ratio = ratio_is_broken ? (rpos==0 ? 4 : rpos==1 ? 8 : rpos==2 ? 12 : rpos==3 ? 20 : 20) : (rpos==0 ? 1.1 : rpos==1 ? 1.2 : rpos==2 ? 1.4 : rpos==3 ? 1.8 : rpos==4 ? 2 : rpos==5 ? 2.5 : rpos==6 ? 3 : rpos==7 ? 3.5 : rpos==8 ? 4 : rpos==9 ? 8 : rpos==10 ? 12 : rpos==11 ? 20 : 20);
+  (ratio_is_broken && rpos == 4) || (!ratio_is_broken && rpos == 12) ? (allin=1; cratio=20;) : (allin=0; cratio = ratio;);
+  cthresh = (softknee ? (thresh -3) : thresh);
+  cthreshv = exp(cthresh * db2log);
+  pregain = slider8;
+  pregainv = exp(pregain * db2log);
+  makeup = slider3;
+  makeupv = exp((makeup+autogain) * db2log);
+  attime = slider4 / 1000000;
+  reltime = slider5 / 1000;
+  brickwall = slider9 >= 0.5;
+  lowcut_freq = slider10;
+  lowcut = slider11 >= 0.5;
+  lowcut != lowcut_was ? (
+    lowcut_x0=0;
+    lowcut_x1=0;
+    lowcut_y0=0;
+    lowcut_y1=0;
+    lowcut_was=lowcut;
+  );
+  lowcut_a = 1 / (1 + 2 * $pi * lowcut_freq / srate);
+  instant_attack = slider7 >= 0.5;
+  atcoef=(instant_attack || brickwall) ? 0 : exp(-1/(attime * srate));
+  relcoef=exp(-1/(reltime * srate));
+  mix=slider6/100;
+
+@sample
+  ospl0 = spl0;
+  ospl1 = spl1;
+  spl0 *= pregainv;
+  spl1 *= pregainv;
+  lowcut ? (
+    lowcut_out0 = lowcut_a * (lowcut_y0 + spl0 - lowcut_x0);
+    lowcut_out1 = lowcut_a * (lowcut_y1 + spl1 - lowcut_x1);
+    lowcut_x0 = spl0;
+    lowcut_x1 = spl1;
+    lowcut_y0 = lowcut_out0;
+    lowcut_y1 = lowcut_out1;
+    spl0 = lowcut_out0;
+    spl1 = lowcut_out1;
+    ospl0 = spl0 / pregainv;
+    ospl1 = spl1 / pregainv;
+  );
+  aspl0 = abs(spl0);
+  aspl1 = abs(spl1);
+  maxspl = max(aspl0, aspl1);
+  maxspl = maxspl * maxspl;
+  runave = maxspl + rmscoef * (runave - maxspl);
+  det = sqrt(max(0,runave));
+
+  overdb = max(0, (brickwall ? log2db : capsc) * log(det/cthreshv));
+
+  overdb - rundb > 5 ? (averatio = 4;);
+
+  overdb > rundb ? (
+    rundb = overdb + atcoef * (rundb - overdb);
+    runratio = averatio + ratatcoef * (runratio - averatio);
+  ) : (
+    rundb = overdb + relcoef * (rundb - overdb);
+    runratio = averatio + ratrelcoef * (runratio - averatio);
+  );
+  overdb = rundb;
+  averatio = runratio;
+
+  allin ? (
+    cratio = 12 + averatio;
+  ) : (
+    cratio = ratio;
+  );
+  brickwall ? cratio = 1000000;
+
+  ext_gr_meter = gr = brickwall ? -overdb : -overdb * (cratio-1)/cratio;
+  grv = exp(gr * db2log);
+
+  runmax = maxover + relcoef * (runmax - maxover);  // highest peak for setting att/rel decays in reltime
+  maxover = runmax;
+
+  grv < gr_meter ? gr_meter=grv : ( gr_meter*=gr_meter_decay; gr_meter>1?gr_meter=1; );
+
+  wetmix = brickwall ? 1 : mix;
+  drymix = brickwall ? 0 : 1-mix;
+  spl0 *= grv * makeupv * wetmix;
+  spl1 *= grv * makeupv * wetmix;
+
+  spl0 += ospl0 * drymix;
+  spl1 += ospl1 * drymix;
+
+  ui_curve_in_db = max(-60,min(0,log(max(det,0.000001))*log2db));
+  ui_curve_out_db = max(-60,min(0,ui_curve_in_db + gr + makeup));
+
+@gfx 720 560
+
+  gr_meter *= exp(1/30); gr_meter>1?gr_meter=1; // decay meter here so if the audio processing stops it doesnt "stick"
+  slider_show(slider1,0);
+  slider_show(slider2,0);
+  slider_show(slider3,0);
+  slider_show(slider4,0);
+  slider_show(slider5,0);
+  slider_show(slider6,0);
+  slider_show(slider7,0);
+  slider_show(slider8,0);
+  slider_show(slider9,0);
+  slider_show(slider10,0);
+  slider_show(slider11,0);
+  slider_show(1,0);
+  slider_show(2,0);
+  slider_show(3,0);
+  slider_show(4,0);
+  slider_show(5,0);
+  slider_show(6,0);
+  slider_show(7,0);
+  slider_show(8,0);
+  slider_show(9,0);
+  slider_show(10,0);
+  slider_show(11,0);
+
+  gfx_setfont(1,"Arial",13);
+  gfx_r=0.095; gfx_g=0.10; gfx_b=0.105; gfx_a=1;
+  gfx_x=0; gfx_y=0; gfx_rectto(gfx_w,gfx_h);
+  gfx_r=0.045; gfx_g=0.05; gfx_b=0.055; gfx_a=1;
+  gfx_x=0; gfx_y=0; gfx_rectto(gfx_w,42);
+  gfx_r=0.94; gfx_g=0.90; gfx_b=0.82; gfx_a=1;
+  gfx_x=18; gfx_y=13; gfx_drawstr("SLOP Compressor");
+
+  margin = 24;
+  bottom_meter_h = 78;
+  graph_x = margin;
+  graph_y = 54;
+  control_w = min(300,max(230,gfx_w*0.36));
+  control_x = max(300,gfx_w - control_w - margin);
+  graph_w = max(220,control_x - graph_x - 26);
+  graph_h = max(150,gfx_h - graph_y - bottom_meter_h - 24);
+  knob_r = min(30,max(22,control_w/9));
+  col_gap = control_w/2;
+  row_gap = min(112,max(94,(graph_h-70)/3));
+  knob_start_y = graph_y + 28;
+  ratio_x = control_x + col_gap*0.5;
+  ratio_y = knob_start_y + row_gap;
+  attack_x = control_x + col_gap*0.5;
+  attack_y = knob_start_y + row_gap*2;
+  lowcut_x = control_x + col_gap*1.5;
+  lowcut_y = knob_start_y + row_gap*3;
+
+  mouse_down = mouse_cap & 1;
+  mouse_pressed = mouse_down && !ui_last_mouse_cap;
+  mouse_released = !mouse_down && ui_last_mouse_cap;
+
+  mouse_pressed ? (
+    brick_x = ratio_x - 32;
+    brick_y = ratio_y + knob_r + 25;
+    brick_w = 64;
+    brick_h = 18;
+    inst_x = attack_x - 32;
+    inst_y = attack_y + knob_r + 25;
+    inst_w = 64;
+    inst_h = 18;
+    lcut_x = lowcut_x - 32;
+    lcut_y = lowcut_y + knob_r + 25;
+    lcut_w = 64;
+    lcut_h = 18;
+    mouse_x >= brick_x && mouse_x <= brick_x+brick_w && mouse_y >= brick_y && mouse_y <= brick_y+brick_h ? (
+      slider9 = slider9 >= 0.5 ? 0 : 1;
+      slider_automate(slider9);
+      brickwall = slider9 >= 0.5;
+      atcoef = (instant_attack || brickwall) ? 0 : exp(-1/(attime * srate));
+    ) : mouse_x >= lcut_x && mouse_x <= lcut_x+lcut_w && mouse_y >= lcut_y && mouse_y <= lcut_y+lcut_h ? (
+      slider11 = slider11 >= 0.5 ? 0 : 1;
+      slider_automate(slider11);
+      lowcut = slider11 >= 0.5;
+      lowcut_x0=0;
+      lowcut_x1=0;
+      lowcut_y0=0;
+      lowcut_y1=0;
+      lowcut_was=lowcut;
+    ) : mouse_x >= inst_x && mouse_x <= inst_x+inst_w && mouse_y >= inst_y && mouse_y <= inst_y+inst_h ? (
+      slider7 = slider7 >= 0.5 ? 0 : 1;
+      slider_automate(slider7);
+      instant_attack = slider7 >= 0.5;
+      atcoef = (instant_attack || brickwall) ? 0 : exp(-1/(attime * srate));
+    ) : (
+    i=0;
+    loop(8,
+      col = i - floor(i/2)*2;
+      row = floor(i/2);
+      kx = control_x + col_gap*(col+0.5);
+      ky = knob_start_y + row_gap*row;
+      dx = mouse_x - kx;
+      dy = mouse_y - ky;
+      dx*dx + dy*dy <= (knob_r+8)*(knob_r+8) ? (
+        now = time_precise();
+        ui_drag = i+1;
+        ui_drag_y = mouse_y;
+        ui_drag_val = i == 0 ? slider8 : i == 1 ? slider1 : i == 2 ? slider2 : i == 3 ? slider3 : i == 4 ? slider4 : i == 5 ? slider5 : i == 6 ? slider6 : slider10;
+        ui_last_click_knob == ui_drag && now - ui_last_click_time < 0.35 ? (
+          ui_drag == 1 ? (slider8 = 0; slider_automate(slider8););
+          ui_drag == 2 ? (slider1 = 0; slider_automate(slider1););
+          ui_drag == 3 ? (slider2 = 5; slider_automate(slider2););
+          ui_drag == 4 ? (slider3 = 0; slider_automate(slider3););
+          ui_drag == 5 ? (slider4 = 20; slider_automate(slider4););
+          ui_drag == 6 ? (slider5 = 250; slider_automate(slider5););
+          ui_drag == 7 ? (slider6 = 100; slider_automate(slider6););
+          ui_drag == 8 ? (slider10 = 60; slider_automate(slider10););
+          ui_drag = 0;
+          ui_last_click_knob = 0;
+          ui_last_click_time = -1;
+          thresh = slider1;
+          threshv = exp(thresh * db2log);
+          capsc = log2db;
+          ratio_is_broken = slider2 <= 4;
+          (rpos = slider2) > 4 ? ( rpos -= 5; ) : ( capsc *= 2.08136898; );
+          ratio = ratio_is_broken ? (rpos==0 ? 4 : rpos==1 ? 8 : rpos==2 ? 12 : rpos==3 ? 20 : 20) : (rpos==0 ? 1.1 : rpos==1 ? 1.2 : rpos==2 ? 1.4 : rpos==3 ? 1.8 : rpos==4 ? 2 : rpos==5 ? 2.5 : rpos==6 ? 3 : rpos==7 ? 3.5 : rpos==8 ? 4 : rpos==9 ? 8 : rpos==10 ? 12 : rpos==11 ? 20 : 20);
+          (ratio_is_broken && rpos == 4) || (!ratio_is_broken && rpos == 12) ? (allin=1; cratio=20;) : (allin=0; cratio = ratio;);
+          cthresh = (softknee ? (thresh -3) : thresh);
+          cthreshv = exp(cthresh * db2log);
+          pregain = slider8;
+          pregainv = exp(pregain * db2log);
+          makeup = slider3;
+          makeupv = exp((makeup+autogain) * db2log);
+          attime = slider4 / 1000000;
+          reltime = slider5 / 1000;
+          brickwall = slider9 >= 0.5;
+          lowcut_freq = slider10;
+          lowcut = slider11 >= 0.5;
+          lowcut != lowcut_was ? (
+            lowcut_x0=0;
+            lowcut_x1=0;
+            lowcut_y0=0;
+            lowcut_y1=0;
+            lowcut_was=lowcut;
+          );
+          lowcut_a = 1 / (1 + 2 * $pi * lowcut_freq / srate);
+          instant_attack = slider7 >= 0.5;
+          atcoef=(instant_attack || brickwall) ? 0 : exp(-1/(attime * srate));
+          relcoef=exp(-1/(reltime * srate));
+          mix=slider6/100;
+        ) : (
+          ui_last_click_knob = ui_drag;
+          ui_last_click_time = now;
+        );
+      );
+      i += 1;
+    );
+    );
+  );
+
+  mouse_down && ui_drag ? (
+    md = ui_drag_y - mouse_y;
+    fine = (mouse_cap & 8) ? 0.2 : 1;
+    ui_drag == 1 ? (slider8 = min(80,max(-20,ui_drag_val + md * 0.12 * fine)); slider_automate(slider8););
+    ui_drag == 2 ? (slider1 = min(0,max(-60,ui_drag_val + md * 0.18 * fine)); slider_automate(slider1););
+    ui_drag == 3 ? (slider2 = min(17,max(0, floor(ui_drag_val + md * 0.055 * fine + 0.5))); slider_automate(slider2););
+    ui_drag == 4 ? (slider3 = min(20,max(-20,ui_drag_val + md * 0.12 * fine)); slider_automate(slider3););
+    ui_drag == 5 ? (slider4 = min(2000,max(20,ui_drag_val + md * 6 * fine)); slider_automate(slider4););
+    ui_drag == 6 ? (slider5 = min(1000,max(20,ui_drag_val + md * 4 * fine)); slider_automate(slider5););
+    ui_drag == 7 ? (slider6 = min(100,max(0,ui_drag_val + md * 0.35 * fine)); slider_automate(slider6););
+    ui_drag == 8 ? (slider10 = min(250,max(20,ui_drag_val + md * 0.7 * fine)); slider_automate(slider10););
+
+    thresh = slider1;
+    threshv = exp(thresh * db2log);
+    capsc = log2db;
+    ratio_is_broken = slider2 <= 4;
+    (rpos = slider2) > 4 ? ( rpos -= 5; ) : ( capsc *= 2.08136898; );
+    ratio = ratio_is_broken ? (rpos==0 ? 4 : rpos==1 ? 8 : rpos==2 ? 12 : rpos==3 ? 20 : 20) : (rpos==0 ? 1.1 : rpos==1 ? 1.2 : rpos==2 ? 1.4 : rpos==3 ? 1.8 : rpos==4 ? 2 : rpos==5 ? 2.5 : rpos==6 ? 3 : rpos==7 ? 3.5 : rpos==8 ? 4 : rpos==9 ? 8 : rpos==10 ? 12 : rpos==11 ? 20 : 20);
+    (ratio_is_broken && rpos == 4) || (!ratio_is_broken && rpos == 12) ? (allin=1; cratio=20;) : (allin=0; cratio = ratio;);
+    cthresh = (softknee ? (thresh -3) : thresh);
+    cthreshv = exp(cthresh * db2log);
+    pregain = slider8;
+    pregainv = exp(pregain * db2log);
+    makeup = slider3;
+    makeupv = exp((makeup+autogain) * db2log);
+    attime = slider4 / 1000000;
+    reltime = slider5 / 1000;
+    brickwall = slider9 >= 0.5;
+    lowcut_freq = slider10;
+    lowcut = slider11 >= 0.5;
+    lowcut != lowcut_was ? (
+      lowcut_x0=0;
+      lowcut_x1=0;
+      lowcut_y0=0;
+      lowcut_y1=0;
+      lowcut_was=lowcut;
+    );
+    lowcut_a = 1 / (1 + 2 * $pi * lowcut_freq / srate);
+    instant_attack = slider7 >= 0.5;
+    atcoef=(instant_attack || brickwall) ? 0 : exp(-1/(attime * srate));
+    relcoef=exp(-1/(reltime * srate));
+    mix=slider6/100;
+  );
+
+  mouse_released ? ui_drag = 0;
+  ui_last_mouse_cap = mouse_down;
+
+  i=0;
+  loop(8,
+    col = i - floor(i/2)*2;
+    row = floor(i/2);
+    kx = control_x + col_gap*(col+0.5);
+    ky = knob_start_y + row_gap*row;
+    i == 0 ? (norm=(slider8+20)/100; sprintf(#label,"PRE GAIN"); sprintf(#value,"%.1fdB",slider8););
+    i == 1 ? (norm=(slider1+60)/60; sprintf(#label,"THRESH"); sprintf(#value,"%.1fdB",slider1););
+    i == 2 ? (
+      norm=slider2/17;
+      sprintf(#label,"RATIO");
+      slider2 < 5 ? (
+        slider2 == 0 ? sprintf(#value,"BC 4");
+        slider2 == 1 ? sprintf(#value,"BC 8");
+        slider2 == 2 ? sprintf(#value,"BC 12");
+        slider2 == 3 ? sprintf(#value,"BC 20");
+        slider2 == 4 ? sprintf(#value,"BC All");
+      ) : (
+        ratio_label = slider2 - 5;
+        ratio_label == 0 ? sprintf(#value,"1.1:1");
+        ratio_label == 1 ? sprintf(#value,"1.2:1");
+        ratio_label == 2 ? sprintf(#value,"1.4:1");
+        ratio_label == 3 ? sprintf(#value,"1.8:1");
+        ratio_label == 4 ? sprintf(#value,"2:1");
+        ratio_label == 5 ? sprintf(#value,"2.5:1");
+        ratio_label == 6 ? sprintf(#value,"3:1");
+        ratio_label == 7 ? sprintf(#value,"3.5:1");
+        ratio_label == 8 ? sprintf(#value,"4:1");
+        ratio_label == 9 ? sprintf(#value,"8:1");
+        ratio_label == 10 ? sprintf(#value,"12:1");
+        ratio_label == 11 ? sprintf(#value,"20:1");
+        ratio_label == 12 ? sprintf(#value,"All");
+      );
+      slider9 >= 0.5 ? sprintf(#value,"LIMIT");
+    );
+    i == 3 ? (norm=(slider3+20)/40; sprintf(#label,"GAIN"); sprintf(#value,"%.1fdB",slider3););
+    i == 4 ? (norm=(slider4-20)/1980; sprintf(#label,"ATTACK"); sprintf(#value,"%.0fus",slider4););
+    i == 5 ? (norm=(slider5-20)/980; sprintf(#label,"RELEASE"); sprintf(#value,"%.0fms",slider5););
+    i == 6 ? (norm=slider6/100; sprintf(#label,"MIX"); sprintf(#value,"%.0f%%",slider6););
+    i == 7 ? (norm=(slider10-20)/230; sprintf(#label,"LOW CUT"); sprintf(#value,"%.0fHz",slider10););
+
+    norm < 0 ? norm=0; norm > 1 ? norm=1;
+    gfx_r=0.06; gfx_g=0.065; gfx_b=0.07; gfx_a=1;
+    gfx_circle(kx,ky,knob_r,1,1);
+    gfx_r=0.24; gfx_g=0.25; gfx_b=0.25; gfx_a=1;
+    gfx_circle(kx,ky,knob_r,0,1);
+    gfx_r=0.03; gfx_g=0.035; gfx_b=0.04; gfx_a=1;
+    gfx_circle(kx,ky,knob_r*0.72,1,1);
+
+    a = -2.35 + norm * 4.7;
+    px = kx + cos(a) * knob_r * 0.58;
+    py = ky + sin(a) * knob_r * 0.58;
+    gfx_r=1.0; gfx_g=0.62; gfx_b=0.18; gfx_a=1;
+    gfx_x=kx; gfx_y=ky; gfx_lineto(px,py,1);
+    gfx_circle(px,py,2.5,1,1);
+
+    gfx_r=0.32; gfx_g=0.34; gfx_b=0.34; gfx_a=1;
+    arc_i=0; arc_steps=56;
+    while(arc_i <= arc_steps) (
+      arc_a = -2.35 + 4.7 * arc_i / arc_steps;
+      ax = kx + cos(arc_a) * (knob_r+5);
+      ay = ky + sin(arc_a) * (knob_r+5);
+      arc_i == 0 ? (gfx_x=ax; gfx_y=ay;) : gfx_lineto(ax,ay,1);
+      arc_i += 1;
+    );
+    gfx_r=1.0; gfx_g=0.62; gfx_b=0.18; gfx_a=0.95;
+    arc_i=0; arc_steps=max(2,ceil(norm*56));
+    while(arc_i <= arc_steps) (
+      arc_a = -2.35 + (a+2.35) * arc_i / arc_steps;
+      ax = kx + cos(arc_a) * (knob_r+5);
+      ay = ky + sin(arc_a) * (knob_r+5);
+      arc_i == 0 ? (gfx_x=ax; gfx_y=ay;) : gfx_lineto(ax,ay,1);
+      arc_i += 1;
+    );
+
+    gfx_measurestr(#label,text_w,text_h);
+    gfx_r=0.78; gfx_g=0.80; gfx_b=0.78; gfx_a=1;
+    gfx_x=kx-text_w/2; gfx_y=ky+knob_r+9; gfx_drawstr(#label);
+    gfx_measurestr(#value,text_w,text_h);
+    gfx_r=0.92; gfx_g=0.93; gfx_b=0.90; gfx_a=1;
+    gfx_x=kx-text_w/2; gfx_y=ky-text_h/2; gfx_drawstr(#value);
+    i += 1;
+  );
+
+  brick_x = ratio_x - 32;
+  brick_y = ratio_y + knob_r + 25;
+  brick_w = 64;
+  brick_h = 18;
+  slider9 >= 0.5 ? (
+    gfx_r=1.0; gfx_g=0.62; gfx_b=0.18; gfx_a=0.95;
+  ) : (
+    gfx_r=0.18; gfx_g=0.19; gfx_b=0.19; gfx_a=1;
+  );
+  gfx_x=brick_x; gfx_y=brick_y; gfx_rectto(brick_x+brick_w,brick_y+brick_h);
+  gfx_r=0.32; gfx_g=0.34; gfx_b=0.34; gfx_a=1;
+  gfx_x=brick_x; gfx_y=brick_y; gfx_lineto(brick_x+brick_w,brick_y,0); gfx_lineto(brick_x+brick_w,brick_y+brick_h,0); gfx_lineto(brick_x,brick_y+brick_h,0); gfx_lineto(brick_x,brick_y,0);
+  slider9 >= 0.5 ? (
+    gfx_r=0.05; gfx_g=0.055; gfx_b=0.055; gfx_a=1;
+  ) : (
+    gfx_r=0.78; gfx_g=0.80; gfx_b=0.78; gfx_a=1;
+  );
+  gfx_measurestr("BRICK",text_w,text_h);
+  gfx_x=brick_x+brick_w/2-text_w/2; gfx_y=brick_y+brick_h/2-text_h/2; gfx_drawstr("BRICK");
+
+  inst_x = attack_x - 32;
+  inst_y = attack_y + knob_r + 25;
+  inst_w = 64;
+  inst_h = 18;
+  slider7 >= 0.5 ? (
+    gfx_r=1.0; gfx_g=0.62; gfx_b=0.18; gfx_a=0.95;
+  ) : (
+    gfx_r=0.18; gfx_g=0.19; gfx_b=0.19; gfx_a=1;
+  );
+  gfx_x=inst_x; gfx_y=inst_y; gfx_rectto(inst_x+inst_w,inst_y+inst_h);
+  gfx_r=0.32; gfx_g=0.34; gfx_b=0.34; gfx_a=1;
+  gfx_x=inst_x; gfx_y=inst_y; gfx_lineto(inst_x+inst_w,inst_y,0); gfx_lineto(inst_x+inst_w,inst_y+inst_h,0); gfx_lineto(inst_x,inst_y+inst_h,0); gfx_lineto(inst_x,inst_y,0);
+  slider7 >= 0.5 ? (
+    gfx_r=0.05; gfx_g=0.055; gfx_b=0.055; gfx_a=1;
+  ) : (
+    gfx_r=0.78; gfx_g=0.80; gfx_b=0.78; gfx_a=1;
+  );
+  gfx_measurestr("INSTANT",text_w,text_h);
+  gfx_x=inst_x+inst_w/2-text_w/2; gfx_y=inst_y+inst_h/2-text_h/2; gfx_drawstr("INSTANT");
+
+  lcut_x = lowcut_x - 32;
+  lcut_y = lowcut_y + knob_r + 25;
+  lcut_w = 64;
+  lcut_h = 18;
+  slider11 >= 0.5 ? (
+    gfx_r=1.0; gfx_g=0.62; gfx_b=0.18; gfx_a=0.95;
+  ) : (
+    gfx_r=0.18; gfx_g=0.19; gfx_b=0.19; gfx_a=1;
+  );
+  gfx_x=lcut_x; gfx_y=lcut_y; gfx_rectto(lcut_x+lcut_w,lcut_y+lcut_h);
+  gfx_r=0.32; gfx_g=0.34; gfx_b=0.34; gfx_a=1;
+  gfx_x=lcut_x; gfx_y=lcut_y; gfx_lineto(lcut_x+lcut_w,lcut_y,0); gfx_lineto(lcut_x+lcut_w,lcut_y+lcut_h,0); gfx_lineto(lcut_x,lcut_y+lcut_h,0); gfx_lineto(lcut_x,lcut_y,0);
+  slider11 >= 0.5 ? (
+    gfx_r=0.05; gfx_g=0.055; gfx_b=0.055; gfx_a=1;
+  ) : (
+    gfx_r=0.78; gfx_g=0.80; gfx_b=0.78; gfx_a=1;
+  );
+  gfx_measurestr("LCUT",text_w,text_h);
+  gfx_x=lcut_x+lcut_w/2-text_w/2; gfx_y=lcut_y+lcut_h/2-text_h/2; gfx_drawstr("LCUT");
+
+  gfx_r=0.065; gfx_g=0.07; gfx_b=0.073; gfx_a=1;
+  gfx_x=graph_x; gfx_y=graph_y; gfx_rectto(graph_x+graph_w,graph_y+graph_h);
+  gfx_r=0.22; gfx_g=0.23; gfx_b=0.22; gfx_a=1;
+  gfx_x=graph_x; gfx_y=graph_y; gfx_lineto(graph_x+graph_w,graph_y,0); gfx_lineto(graph_x+graph_w,graph_y+graph_h,0); gfx_lineto(graph_x,graph_y+graph_h,0); gfx_lineto(graph_x,graph_y,0);
+  gfx_r=0.80; gfx_g=0.82; gfx_b=0.78; gfx_a=1;
+  gfx_x=graph_x+12; gfx_y=graph_y+10; gfx_drawstr("Transfer Curve");
+
+  i = 0;
+  while(i <= 6) (
+    grid_db = -60 + i * 10;
+    gx = graph_x + (grid_db + 60) / 60 * graph_w;
+    gy = graph_y + (0 - grid_db) / 60 * graph_h;
+    gfx_r=0.18; gfx_g=0.19; gfx_b=0.19; gfx_a=0.55;
+    gfx_x = gx; gfx_y = graph_y; gfx_lineto(gx,graph_y+graph_h,0);
+    gfx_x = graph_x; gfx_y = gy; gfx_lineto(graph_x+graph_w,gy,0);
+    i += 1;
+  );
+
+  gfx_r=0.42; gfx_g=0.45; gfx_b=0.43; gfx_a=0.9;
+  gfx_x = graph_x; gfx_y = graph_y + graph_h;
+  gfx_lineto(graph_x+graph_w,graph_y,0);
+
+  rdraw = brickwall ? 1000000 : max(1.0001,cratio);
+  first_curve = 1;
+  in_db = -60;
+  loop(121,
+    over_draw = max(0, (brickwall ? log2db : capsc) * log(exp(in_db*db2log)/cthreshv));
+    gr_draw = -over_draw * (rdraw-1)/rdraw;
+    out_db = max(-60,min(0,in_db + gr_draw + makeup));
+    cx = graph_x + (in_db + 60) / 60 * graph_w;
+    cy = graph_y + (0 - out_db) / 60 * graph_h;
+    gfx_r=1.0; gfx_g=0.62; gfx_b=0.18; gfx_a=1;
+    first_curve ? (gfx_x = cx; gfx_y = cy; first_curve = 0;) : gfx_lineto(cx,cy,1);
+    in_db += 0.5;
+  );
+
+  live_x = graph_x + (ui_curve_in_db + 60) / 60 * graph_w;
+  live_y = graph_y + (0 - ui_curve_out_db) / 60 * graph_h;
+  gfx_r=0.35; gfx_g=0.73; gfx_b=0.96; gfx_a=0.95;
+  gfx_circle(live_x,live_y,4,1,1);
+  gfx_r=0.92; gfx_g=0.93; gfx_b=0.90; gfx_a=0.75;
+  gfx_circle(live_x,live_y,7,0,1);
+
+  gr_db = max(-30,min(0,log(max(gr_meter,0.000001))*log2db));
+  meter_x = margin;
+  meter_y = gfx_h - 34;
+  meter_w = max(180,gfx_w - margin*2);
+  gfx_r=0.80; gfx_g=0.82; gfx_b=0.78; gfx_a=1;
+  gfx_x=meter_x; gfx_y=meter_y-18; gfx_drawstr("Compression");
+  sprintf(#grtxt, "GR %.1f dB", gr_db);
+  gfx_measurestr(#grtxt,text_w,text_h);
+  gfx_r=0.80; gfx_g=0.82; gfx_b=0.78; gfx_a=1;
+  gfx_x=meter_x+meter_w-text_w; gfx_y=meter_y-18; gfx_drawstr(#grtxt);
+  gfx_r=0.035; gfx_g=0.038; gfx_b=0.04; gfx_a=1;
+  gfx_x=meter_x; gfx_y=meter_y; gfx_rectto(meter_x+meter_w,meter_y+18);
+  gfx_r=1.0; gfx_g=0.25; gfx_b=0.16; gfx_a=0.85;
+  gfx_x=meter_x; gfx_y=meter_y; gfx_rectto(meter_x + meter_w * abs(gr_db)/30,meter_y+18);
+  gfx_r=0.22; gfx_g=0.23; gfx_b=0.22; gfx_a=1;
+  gfx_x=meter_x; gfx_y=meter_y; gfx_lineto(meter_x+meter_w,meter_y,0); gfx_lineto(meter_x+meter_w,meter_y+18,0); gfx_lineto(meter_x,meter_y+18,0); gfx_lineto(meter_x,meter_y,0);
+
+  gfx_a=1;

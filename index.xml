@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <index version="1" name="KRGSH REAPER FX">
+  <category name="Effects">
+    <reapack name="Slop Compressor.jsfx" type="effect">
+      <metadata>
+        <description><![CDATA[A tweaked compressor with a custom UI, based on Thomas Scott Stillwell's 1175 FAST Attack Compressor.]]></description>
+      </metadata>
+      <version name="1.0.0" author="KRGSH" time="2026-05-30T00:00:00Z">
+        <source>https://github.com/frankhildebrandt/KRGSH-Reaper-Scripts/raw/main/Effects/Slop%20Compressor.jsfx</source>
+      </version>
+    </reapack>
+  </category>
   <category name="MIDI">
     <reapack name="MIDI Pitch Bend Remover - Pitch Bend Only.jsfx" type="effect">
       <metadata>
